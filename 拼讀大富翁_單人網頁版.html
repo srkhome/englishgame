@@ -1,0 +1,970 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>拼讀大富翁 - 單人版</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Baloo+2:wght@500;700;800&family=Noto+Sans+TC:wght@400;500;700;900&display=swap');
+
+:root{
+  --ink:#233238;
+  --paper:#FBF6EC;
+  --panel:#FFFFFF;
+  --line:#D9D2C2;
+  --teal:#1F4E5F;
+  --teal-dark:#123644;
+  --gold:#E8A93B;
+  --at:#E4572E;
+  --an:#F2994A;
+  --og:#D6B322;
+  --un:#5FA75A;
+  --ig:#3D8FC4;
+  --ay:#5B6EE1;
+  --ee:#9B6FD9;
+  --ook:#D4568C;
+}
+*{box-sizing:border-box;}
+body{
+  margin:0;
+  font-family:'Noto Sans TC', sans-serif;
+  background:
+    radial-gradient(circle at 1px 1px, #E7DFCB 1.4px, transparent 1.4px) 0 0/22px 22px,
+    var(--paper);
+  color:var(--ink);
+  padding:20px;
+}
+h1,h2,h3{font-family:'Baloo 2','Noto Sans TC',sans-serif; margin:0;}
+.wrap{max-width:1180px;margin:0 auto;}
+.topbar{
+  display:flex;justify-content:space-between;align-items:center;
+  margin-bottom:16px;flex-wrap:wrap;gap:10px;
+}
+.title{display:flex;align-items:center;gap:10px;}
+.title .badge{
+  width:38px;height:38px;border-radius:10px;background:var(--teal);
+  display:flex;align-items:center;justify-content:center;
+  box-shadow: 0 3px 0 var(--teal-dark);
+}
+.title .badge::before,.title .badge::after{
+  content:'';width:7px;height:7px;border-radius:50%;background:#fff;
+}
+.title .badge{gap:5px;}
+.title h1{font-size:24px;font-weight:800;color:var(--teal-dark);}
+.title span{display:block;font-size:12px;color:#7A7261;font-weight:500;}
+.btn{
+  font-family:inherit;font-size:14px;font-weight:700;
+  border:2px solid var(--teal-dark);background:#fff;color:var(--teal-dark);
+  padding:9px 16px;border-radius:10px;cursor:pointer;
+  box-shadow:0 3px 0 var(--teal-dark);
+  transition:transform .08s;
+}
+.btn:hover{background:#F2EEE0;}
+.btn:active{transform:translateY(2px);box-shadow:0 1px 0 var(--teal-dark);}
+.btn.primary{background:var(--teal);color:#fff;}
+.btn.primary:hover{background:var(--teal-dark);}
+.btn.gold{background:var(--gold);border-color:#A8721E;box-shadow:0 3px 0 #A8721E;color:#3A2708;}
+.btn.gold:active{box-shadow:0 1px 0 #A8721E;}
+.btn:disabled{opacity:.45;cursor:not-allowed;box-shadow:none;transform:none;}
+.btn.small{padding:6px 11px;font-size:12px;border-width:1.5px;box-shadow:0 2px 0 var(--teal-dark);}
+
+.layout{display:flex;gap:18px;align-items:flex-start;flex-wrap:wrap;}
+.board-col{flex:1 1 640px;min-width:340px;}
+.side-col{flex:0 0 300px;display:flex;flex-direction:column;gap:14px;}
+
+.board{
+  position:relative;
+  display:grid;
+  grid-template-columns:repeat(7,1fr);
+  grid-template-rows:repeat(7,1fr);
+  gap:5px;
+  aspect-ratio:1/1;
+  width:100%;
+  background:#E9E1CC;
+  border:3px solid var(--teal-dark);
+  border-radius:16px;
+  padding:6px;
+}
+.sq{
+  position:relative;
+  background:var(--panel);
+  border:1.5px solid var(--line);
+  border-radius:8px;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+  text-align:center;
+  padding:2px;
+  overflow:hidden;
+}
+.sq .studs{position:absolute;top:3px;left:0;right:0;display:flex;justify-content:center;gap:5px;}
+.sq .studs i{width:7px;height:7px;border-radius:50%;display:block;}
+.sq .lab{font-size:9.5px;font-weight:700;line-height:1.15;margin-top:9px;color:#4A463C;}
+.sq .fam{font-size:12px;font-weight:800;margin-top:2px;}
+.sq.corner{border-radius:10px;border-width:2px;}
+.sq.corner .lab{font-size:10px;margin-top:0;font-weight:800;color:var(--teal-dark);}
+.sq.card{background:#FBF0DC;}
+.sq.card .lab{color:#8A5E10;}
+.sq.owned{box-shadow:inset 0 0 0 3px var(--own-c, #999);}
+.sq .lvl{position:absolute;bottom:3px;right:4px;font-size:9px;font-weight:800;}
+.tokenLayer{position:absolute;inset:0;pointer-events:none;z-index:5;}
+.piece{position:absolute;top:0;left:0;width:0;height:0;}
+.piece-body{
+  width:18px;height:26px;
+  transform:translate(-50%,-100%);
+  transform-origin:50% 100%;
+}
+.piece-body svg{display:block;width:100%;height:100%;filter:drop-shadow(0 2px 2px rgba(0,0,0,.35));}
+.piece-body.hop{animation:hopJump .34s cubic-bezier(.34,1.56,.64,1);}
+@keyframes hopJump{
+  0%{transform:translate(-50%,-100%) scale(1,1);}
+  40%{transform:translate(-50%,-142%) scale(1.06,.9);}
+  70%{transform:translate(-50%,-92%) scale(.94,1.08);}
+  100%{transform:translate(-50%,-100%) scale(1,1);}
+}
+
+.center-panel{
+  position:absolute;
+  z-index:10;
+  top:calc(100%/7 + 6px);left:calc(100%/7 + 6px);
+  right:calc(100%/7 + 6px);bottom:calc(100%/7 + 6px);
+  background:var(--panel);
+  border:2.5px solid var(--teal-dark);
+  border-radius:14px;
+  padding:14px;
+  display:flex;flex-direction:column;
+  gap:8px;
+}
+.turn-line{display:flex;align-items:center;justify-content:space-between;gap:8px;}
+.turn-who{display:flex;align-items:center;gap:8px;font-weight:800;font-size:15px;color:var(--teal-dark);}
+.dot{width:13px;height:13px;border-radius:50%;flex:none;}
+.round-tag{font-size:11px;color:#8A8371;font-weight:700;background:#F2EEE0;padding:3px 9px;border-radius:20px;}
+
+.msgbox{
+  flex:1;min-height:0;overflow-y:auto;
+  background:#F6F1E4;border-radius:10px;padding:8px 10px;
+  font-size:12.5px;line-height:1.6;color:#4A463C;
+}
+.msgbox p{margin:0 0 4px;}
+.msgbox p.me{color:var(--teal-dark);font-weight:700;}
+
+.action-area{display:flex;flex-direction:column;gap:8px;}
+.family-tag{
+  display:inline-flex;align-items:center;gap:6px;
+  font-weight:800;font-size:13px;padding:4px 10px;border-radius:20px;
+  align-self:flex-start;
+}
+.timerbar{height:6px;background:#EADFC5;border-radius:4px;overflow:hidden;}
+.timerbar > div{height:100%;background:var(--gold);width:100%;transition:width .1s linear;}
+.spell-row{display:flex;gap:6px;}
+.spell-row input{
+  flex:1;font-family:inherit;font-size:15px;font-weight:700;letter-spacing:.5px;
+  padding:8px 10px;border-radius:8px;border:2px solid var(--line);
+  text-transform:lowercase;
+}
+.spell-row input:focus{outline:none;border-color:var(--teal);}
+.hint-line{font-size:11.5px;color:#8A5E10;}
+.choice-row{display:flex;gap:8px;flex-wrap:wrap;}
+
+.side-card{
+  background:var(--panel);border:1.5px solid var(--line);border-radius:12px;padding:12px 14px;
+}
+.side-card h3{font-size:13px;color:var(--teal-dark);margin-bottom:8px;}
+.player-row{
+  display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px dashed var(--line);
+  font-size:13px;
+}
+.player-row:last-child{border-bottom:none;}
+.player-row .pdot{width:12px;height:12px;border-radius:50%;flex:none;}
+.player-row .pname{font-weight:700;flex:1;}
+.player-row .pmoney{font-weight:700;color:var(--teal-dark);}
+.player-row.dead{opacity:.4;text-decoration:line-through;}
+.fam-legend{display:grid;grid-template-columns:1fr 1fr;gap:5px;}
+.fam-chip{
+  display:flex;align-items:center;gap:5px;font-size:11px;font-weight:700;
+  padding:4px 6px;border-radius:6px;background:#F6F1E4;
+}
+.fam-chip .sw{width:9px;height:9px;border-radius:50%;flex:none;}
+
+.overlay{
+  position:fixed;inset:0;background:#2A2013AA;display:flex;align-items:center;justify-content:center;z-index:50;
+  padding:20px;
+}
+.overlay .card{
+  background:var(--panel);border-radius:16px;padding:26px 30px;max-width:420px;width:100%;
+  box-shadow:0 12px 0 var(--teal-dark);
+  text-align:center;
+}
+.overlay h2{color:var(--teal-dark);font-size:22px;margin-bottom:10px;}
+.overlay .rank{display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px dashed var(--line);font-size:14px;font-weight:700;}
+.overlay .rank:last-child{border-bottom:none;}
+
+.help{font-size:12.5px;color:#7A7261;line-height:1.7;background:#F6F1E4;border-radius:10px;padding:10px 12px;}
+.help b{color:var(--teal-dark);}
+
+@media (max-width:760px){
+  .side-col{flex:1 1 100%;}
+  .board{gap:3px;padding:4px;}
+  .sq .lab{font-size:7.5px;}
+  .sq .fam{font-size:9px;}
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="topbar">
+    <div class="title">
+      <div class="badge"></div>
+      <div>
+        <h1>拼讀大富翁</h1>
+        <span>單人版・對戰電腦玩家・用英霸積木拼讀法前進</span>
+      </div>
+    </div>
+    <div style="display:flex;gap:8px;">
+      <button class="btn small" id="helpBtn">遊戲說明</button>
+      <button class="btn small" id="restartBtn">重新開始</button>
+    </div>
+  </div>
+
+  <div id="helpPanel" class="help" style="display:none;margin-bottom:14px;"></div>
+
+  <div class="layout">
+    <div class="board-col">
+      <div class="board" id="board"></div>
+    </div>
+    <div class="side-col">
+      <div class="side-card">
+        <h3>玩家狀態</h3>
+        <div id="playersList"></div>
+      </div>
+      <div class="side-card">
+        <h3>字母串家族</h3>
+        <div class="fam-legend" id="famLegend"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="overlay" class="overlay" style="display:none;"></div>
+
+<script>
+const FAMILIES = {
+  at:{label:'at', color:'var(--at)', words:['cat','hat','bat','mat','rat','sat','fat','that','flat','chat','what','eat','water','attack','attach','attempt','atlas','matter','battle','pattern','satellite','statue','natural','chatter','scatter','platter','attitude','athlete']},
+  an:{label:'an', color:'var(--an)', words:['can','man','fan','pan','ran','van','plan','than','began','banana','orange','dance','animal','planet','grand','brand','stand','sand','land','hand','handle','candle','answer','dragon','organ','elephant','japan','canada','transport']},
+  og:{label:'og', color:'var(--og)', words:['dog','log','fog','jog','frog','blog','dogs','foggy','jogger','catalog','dialogue','cognac','yogurt','ecology']},
+  un:{label:'un', color:'var(--un)', words:['sun','run','fun','bun','gun','spun','stun','shun','under','lunch','sunday','jungle','bundle','punish','uncle','hunt','fungus','thunder','fortune','tunnel','bunny','hundred']},
+  ig:{label:'ig', color:'var(--ig)', words:['big','pig','dig','wig','fig','twig','night','light','right','eight','sign','design','fight','might','tight','bright','flight','giant','digital','original','signal','ignore']},
+  ay:{label:'ay', color:'var(--ay)', words:['day','play','say','way','may','stay','today','away','gray','always','crayon','player','prayer','mayor','layer','payment','display','delay','decay','birthday','holiday']},
+  ee:{label:'ee', color:'var(--ee)', words:['see','bee','tree','free','three','agree','coffee','knee','sweet','green','sheep','feet','meet','need','seed','speed','screen','between','degree','employee','referee','canteen']},
+  ook:{label:'ook', color:'var(--ook)', words:['book','look','cook','took','hook','shook','brook','cookie','notebook','cooking','booking','outlook','handbook','textbook','mistook']},
+};
+const FAMILY_KEYS = Object.keys(FAMILIES);
+
+const BOARD = [
+  {type:'go', label:'出發 GO'},
+  {type:'property', family:'at', label:'at 家族 ①'},
+  {type:'property', family:'an', label:'an 家族 ①'},
+  {type:'challenge', label:'拼讀挑戰卡'},
+  {type:'property', family:'og', label:'og 家族 ①'},
+  {type:'property', family:'og', label:'og 家族 ②'},
+  {type:'review', label:'複習關'},
+  {type:'property', family:'un', label:'un 家族 ①'},
+  {type:'property', family:'un', label:'un 家族 ②'},
+  {type:'chest', label:'字彙寶箱卡'},
+  {type:'property', family:'ig', label:'ig 家族 ①'},
+  {type:'property', family:'ig', label:'ig 家族 ②'},
+  {type:'bonus', label:'單字獎勵站'},
+  {type:'property', family:'ay', label:'ay 家族 ①'},
+  {type:'property', family:'ay', label:'ay 家族 ②'},
+  {type:'challenge', label:'拼讀挑戰卡'},
+  {type:'property', family:'ee', label:'ee 家族 ①'},
+  {type:'property', family:'ee', label:'ee 家族 ②'},
+  {type:'goreview', label:'前往複習關'},
+  {type:'property', family:'ook', label:'ook 家族 ①'},
+  {type:'property', family:'ook', label:'ook 家族 ②'},
+  {type:'chest', label:'字彙寶箱卡'},
+  {type:'property', family:'at', label:'at 家族 ②'},
+  {type:'property', family:'an', label:'an 家族 ②'},
+];
+
+const LEVELS = [
+  {name:'空地', need:0, rent:1},
+  {name:'小屋', need:3, rent:2},
+  {name:'大屋', need:5, rent:3},
+  {name:'飯店', need:8, rent:5},
+];
+const LEVEL_VALUE = [2,4,6,10];
+
+function squareCoord(i){
+  if(i<=6) return {col:i, row:6};
+  if(i<=12) return {col:6, row:6-(i-6)};
+  if(i<=18) return {col:6-(i-12), row:0};
+  return {col:0, row:i-18};
+}
+function isCorner(i){ return i===0||i===6||i===12||i===18; }
+function hexToRgba(hex, alpha){
+  const h = hex.replace('#','');
+  const r = parseInt(h.substring(0,2),16);
+  const g = parseInt(h.substring(2,4),16);
+  const b = parseInt(h.substring(4,6),16);
+  return 'rgba('+r+','+g+','+b+','+alpha+')';
+}
+
+const PLAYER_COLORS = ['#2F80ED','#E03131','#2F9E44'];
+const BOT_NAMES = ['小霸','積木王','拼讀高手'];
+const MAX_HINTS = 10;
+const ROUNDS = 15;
+const WORD_COOLDOWN_ROUNDS = 5;
+
+function rollDice(){ return Math.floor(Math.random()*6)+1; }
+function costForWord(w){ return w.length<=4 ? 2 : 3; }
+function wordOnCooldown(word){
+  const usedRound = game.wordRounds[word];
+  if(usedRound===undefined) return false;
+  return (game.round - usedRound) < WORD_COOLDOWN_ROUNDS;
+}
+
+let game = null;
+
+function freshGame(humanCount){
+  const players = [];
+  let botIdx = 0;
+  for(let i=0;i<3;i++){
+    const isHuman = i < humanCount;
+    const name = isHuman ? (humanCount===1 ? '你' : ('玩家'+(i+1))) : BOT_NAMES[botIdx++];
+    players.push({id:i,name,isHuman,color:PLAYER_COLORS[i],pos:0,money:10,owned:{},wordCount:{},skip:false,out:false,turns:0,hintsUsed:0});
+  }
+  return {
+    players,
+    round: 1,
+    wordRounds: {},
+    turnIdx:0,
+    log:[],
+    pending:null,
+    gameOver:false,
+  };
+}
+
+function log(msg, mine){
+  game.log.push({msg, mine});
+  if(game.log.length>60) game.log.shift();
+}
+
+function ownerOf(familyKey, slotIndex){
+  for(const p of game.players){
+    const key = familyKey+':'+slotIndex;
+    if(p.owned[key]) return p;
+  }
+  return null;
+}
+
+function levelIndex(count){
+  let li=0;
+  for(let i=LEVELS.length-1;i>=0;i--){ if(count>=LEVELS[i].need){li=i;break;} }
+  return li;
+}
+
+function initBoard(){
+  const board = document.getElementById('board');
+  board.innerHTML='';
+  for(let i=0;i<24;i++){
+    const {col,row} = squareCoord(i);
+    const def = BOARD[i];
+    const el = document.createElement('div');
+    el.className='sq'+(isCorner(i)?' corner':'')+((def.type==='challenge'||def.type==='chest')?' card':'');
+    el.style.gridColumn = (col+1)+' / '+(col+2);
+    el.style.gridRow = (row+1)+' / '+(row+2);
+    el.dataset.idx = i;
+    if(def.type==='property'){
+      const fam = FAMILIES[def.family];
+      el.innerHTML = '<div class="studs"><i style="background:'+fam.color+'"></i><i style="background:'+fam.color+'"></i></div>'
+        +'<div class="fam" style="color:'+fam.color+'">'+fam.label+'</div>'
+        +'<div class="lab">'+def.label.replace(fam.label+' ','')+'</div>'
+        +'<div class="lvl"></div>';
+    } else {
+      el.innerHTML = '<div class="lab">'+def.label+'</div>';
+    }
+    board.appendChild(el);
+  }
+  const tokenLayer = document.createElement('div');
+  tokenLayer.className='tokenLayer';
+  tokenLayer.id='tokenLayer';
+  board.appendChild(tokenLayer);
+  const center = document.createElement('div');
+  center.className='center-panel';
+  center.id='centerPanel';
+  board.appendChild(center);
+}
+
+function renderFamLegend(){
+  const wrap = document.getElementById('famLegend');
+  wrap.innerHTML = FAMILY_KEYS.map(k=>{
+    const f = FAMILIES[k];
+    return '<div class="fam-chip"><span class="sw" style="background:'+f.color+'"></span>'+f.label+'</div>';
+  }).join('');
+}
+
+function renderPlayers(){
+  const wrap = document.getElementById('playersList');
+  wrap.innerHTML = game.players.map(p=>{
+    const famCount = Object.keys(p.owned).length;
+    return '<div class="player-row'+(p.out?' dead':'')+'">'
+      +'<span class="pdot" style="background:'+p.color+'"></span>'
+      +'<span class="pname">'+p.name+(p.out?'（出局）':'')+'</span>'
+      +'<span style="color:#8A7F63;font-size:11px;">地產 '+famCount+'</span>'
+      +'<span class="pmoney">'+p.money+' 幣</span>'
+      +'</div>';
+  }).join('');
+}
+
+function renderBoardState(){
+  const board = document.getElementById('board');
+  for(let i=0;i<24;i++){
+    const el = board.querySelector('[data-idx="'+i+'"]');
+    const def = BOARD[i];
+    const lvlEl = el.querySelector('.lvl');
+    el.style.background = '';
+    el.style.borderColor = '';
+    el.style.borderWidth = '';
+    if(def.type==='property'){
+      const slot = i;
+      const owner = ownerOf(def.family, slot);
+      const key = def.family+':'+slot;
+      if(owner){
+        const li = levelIndex(owner.owned[key]);
+        lvlEl.textContent = LEVELS[li].name;
+        lvlEl.style.color = owner.color;
+        el.style.borderColor = owner.color;
+        el.style.borderWidth = '3px';
+        el.style.background = hexToRgba(owner.color, 0.16);
+      } else if(lvlEl){
+        lvlEl.textContent='';
+      }
+    }
+  }
+  positionTokens(false);
+}
+
+const PIECE_OFFSETS = [[-9,0],[9,0],[0,10]];
+const PAWN_SVG =
+  '<svg viewBox="0 0 24 32" xmlns="http://www.w3.org/2000/svg">'
+    +'<ellipse cx="12" cy="29.5" rx="7.2" ry="2" fill="rgba(0,0,0,.28)"/>'
+    +'<polygon points="6.2,27 17.8,27 14.3,15.5 9.7,15.5" style="fill:var(--pc,#2F80ED)" stroke="#fff" stroke-width="1" stroke-linejoin="round"/>'
+    +'<ellipse cx="12" cy="15.5" rx="3.1" ry="1.5" style="fill:var(--pc,#2F80ED)" stroke="#fff" stroke-width="1"/>'
+    +'<circle cx="12" cy="8.6" r="6.3" style="fill:var(--pc,#2F80ED)" stroke="#fff" stroke-width="1.2"/>'
+    +'<ellipse cx="9.6" cy="5.9" rx="1.7" ry="2.3" fill="rgba(255,255,255,.5)"/>'
+  +'</svg>';
+function positionTokens(hop){
+  const board = document.getElementById('board');
+  const layer = document.getElementById('tokenLayer');
+  if(!board || !layer) return;
+  const boardRect = board.getBoundingClientRect();
+  if(boardRect.width===0) return; // board not laid out yet
+  game.players.forEach((p, idx)=>{
+    let wrap = document.getElementById('piece-'+p.id);
+    let body;
+    if(!wrap){
+      wrap = document.createElement('div');
+      wrap.id = 'piece-'+p.id;
+      wrap.className = 'piece';
+      body = document.createElement('div');
+      body.className = 'piece-body';
+      body.style.setProperty('--pc', p.color);
+      body.innerHTML = PAWN_SVG;
+      wrap.appendChild(body);
+      layer.appendChild(wrap);
+    } else {
+      body = wrap.querySelector('.piece-body');
+    }
+    if(p.out){ wrap.style.display='none'; return; }
+    wrap.style.display='block';
+    const sqEl = board.querySelector('[data-idx="'+p.pos+'"]');
+    if(!sqEl) return;
+    const r = sqEl.getBoundingClientRect();
+    const cx = r.left - boardRect.left + r.width/2;
+    const cy = r.top - boardRect.top + r.height/2;
+    const off = PIECE_OFFSETS[idx%PIECE_OFFSETS.length];
+    wrap.style.transition = 'transform .3s cubic-bezier(.34,1.56,.64,1)';
+    wrap.style.transform = 'translate('+(cx+off[0])+'px,'+(cy+off[1])+'px)';
+    if(hop){
+      body.classList.remove('hop');
+      void body.offsetWidth;
+      body.classList.add('hop');
+    }
+  });
+}
+window.addEventListener('resize', ()=>{ if(game) positionTokens(false); });
+
+function famChip(famKey){
+  const f = FAMILIES[famKey];
+  return '<span class="family-tag" style="background:'+f.color+'22;color:'+f.color+'">'+f.label+' 家族</span>';
+}
+
+function renderCenter(extraHtml){
+  const cp = document.getElementById('centerPanel');
+  const cur = game.players[game.turnIdx];
+  const roundNo = game.round;
+  cp.innerHTML =
+    '<div class="turn-line">'
+      +'<div class="turn-who"><span class="dot" style="background:'+cur.color+'"></span>'+cur.name+' 的回合</div>'
+      +'<div class="round-tag">回合 '+Math.min(roundNo,ROUNDS)+' / '+ROUNDS+'</div>'
+    +'</div>'
+    +'<div class="msgbox" id="msgbox"></div>'
+    +'<div class="action-area" id="actionArea">'+(extraHtml||'')+'</div>';
+  const box = document.getElementById('msgbox');
+  box.innerHTML = game.log.slice(-14).map(m=>'<p'+(m.mine?' class="me"':'')+'>'+m.msg+'</p>').join('');
+  box.scrollTop = box.scrollHeight;
+}
+
+function render(extraHtml){
+  renderPlayers();
+  renderBoardState();
+  renderCenter(extraHtml);
+}
+
+// ---------- turn flow ----------
+function startTurn(){
+  if(game.gameOver) return;
+  const p = game.players[game.turnIdx];
+  if(p.out){ nextTurn(); return; }
+  if(p.turns >= ROUNDS){ nextTurn(); return; }
+  p.turns++;
+  if(p.skip){
+    p.skip = false;
+    log(p.name+' 正在複習關休息，暫停一輪。', p.isHuman);
+    render();
+    setTimeout(nextTurn, p.isHuman?700:500);
+    return;
+  }
+  if(p.isHuman){
+    render('<button class="btn primary" id="spinBtn" style="width:100%;">🔤 抽字母串，拼字前進</button>');
+    document.getElementById('spinBtn').onclick = ()=> beginSpellChallenge('move');
+  } else {
+    render();
+    setTimeout(()=> beginSpellChallenge('move'), 700);
+  }
+}
+
+function nextTurn(){
+  game.players[game.turnIdx].turns = game.players[game.turnIdx].turns || 0;
+  game.turnIdx = (game.turnIdx+1) % game.players.length;
+  if(game.turnIdx===0) game.round++;
+  const anyActive = game.players.some(p=>!p.out);
+  const allDone = game.players.every(p=> p.out || p.turns>=ROUNDS);
+  if(!anyActive || allDone){ endGame(); return; }
+  setTimeout(startTurn, 250);
+}
+
+let currentFamily = null;
+let timerInt = null;
+
+function beginSpellChallenge(purpose, forcedFamily){
+  const p = game.players[game.turnIdx];
+  const family = forcedFamily || FAMILY_KEYS[Math.floor(Math.random()*FAMILY_KEYS.length)];
+  currentFamily = family;
+  const f = FAMILIES[family];
+
+  if(purpose==='move'){
+    log(p.name+' 抽到了 '+f.label+' 家族！', p.isHuman);
+  }
+
+  if(!p.isHuman){
+    setTimeout(()=> botAttempt(p, family, purpose), 700);
+    return;
+  }
+
+  let timeLeft = 45000;
+  const startHtml =
+    famChip(family)
+    +'<div class="timerbar" style="margin-top:6px;"><div id="timerFill"></div></div>'
+    +'<div class="spell-row" style="margin-top:8px;">'
+      +'<input type="text" id="spellInput" placeholder="輸入一個包含「'+f.label+'」的英文單字" autocomplete="off">'
+      +'<button class="btn primary small" id="submitSpell">送出</button>'
+    +'</div>'
+    +'<div class="hint-line" id="hintLine">提示：用了提示後這次只能前進 1 格，本場還可以用 '+(MAX_HINTS-p.hintsUsed)+' 次。</div>'
+    +'<button class="btn small" id="hintBtn" style="align-self:flex-start;"'+(p.hintsUsed>=MAX_HINTS?' disabled':'')+'>需要提示（剩 '+(MAX_HINTS-p.hintsUsed)+' 次）</button>';
+  render(startHtml);
+  const input = document.getElementById('spellInput');
+  input.focus();
+  let usedHint = false;
+  document.getElementById('hintBtn').onclick = ()=>{
+    if(p.hintsUsed >= MAX_HINTS) return;
+    p.hintsUsed++;
+    const avail = f.words.filter(w=> !wordOnCooldown(w));
+    const w = avail[Math.floor(Math.random()*avail.length)] || f.words[0];
+    document.getElementById('hintLine').textContent = '提示單字：'+w+'（本場還可以用 '+(MAX_HINTS-p.hintsUsed)+' 次）';
+    const hb = document.getElementById('hintBtn');
+    hb.textContent = '需要提示（剩 '+(MAX_HINTS-p.hintsUsed)+' 次）';
+    if(p.hintsUsed>=MAX_HINTS) hb.disabled = true;
+    usedHint = true;
+  };
+  const submit = async ()=>{
+    clearInterval(timerInt);
+    const val = input.value.trim().toLowerCase();
+    const btn = document.getElementById('submitSpell');
+    const hintLineEl = document.getElementById('hintLine');
+    if(btn) btn.disabled = true;
+    if(input) input.disabled = true;
+    if(val && hintLineEl) hintLineEl.textContent = '查詢字典確認中…';
+    await resolveSpellAttempt(p, family, val, purpose, usedHint);
+  };
+  document.getElementById('submitSpell').onclick = submit;
+  input.addEventListener('keydown', e=>{ if(e.key==='Enter') submit(); });
+
+  const fill = document.getElementById('timerFill');
+  const total = timeLeft;
+  timerInt = setInterval(()=>{
+    timeLeft -= 100;
+    if(fill) fill.style.width = Math.max(0,(timeLeft/total*100))+'%';
+    if(timeLeft<=0){
+      clearInterval(timerInt);
+      resolveSpellAttempt(p, family, '', purpose, usedHint);
+    }
+  }, 100);
+}
+
+function isValidWord(family, word){
+  if(!word) return false;
+  if(!/^[a-z]+$/.test(word)) return false;
+  if(word.length < 3) return false;
+  if(word === family) return false;
+  if(!word.includes(family)) return false;
+  return true;
+}
+
+const dictCache = {};
+async function isRealWord(word){
+  if(Object.prototype.hasOwnProperty.call(dictCache, word)) return dictCache[word];
+  try{
+    const res = await fetch('https://api.dictionaryapi.dev/api/v2/entries/en/'+encodeURIComponent(word));
+    const ok = res.ok;
+    dictCache[word] = ok;
+    return ok;
+  } catch(e){
+    return null; // 無法連線，交由備援字庫判斷
+  }
+}
+
+function botAttempt(p, family, purpose){
+  const f = FAMILIES[family];
+  const successChance = 0.78;
+  const success = Math.random() < successChance;
+  let word = '';
+  if(success){
+    let pool = f.words.filter(w=> !wordOnCooldown(w));
+    if(pool.length===0){ resolveSpellAttempt(p, family, '', purpose, false); return; }
+    word = pool[Math.floor(Math.random()*pool.length)];
+  }
+  resolveSpellAttempt(p, family, word, purpose, false);
+}
+
+async function resolveSpellAttempt(p, family, word, purpose, usedHint){
+  const f = FAMILIES[family];
+  word = (word||'').trim().toLowerCase();
+  const consecutiveRepeat = !!word && wordOnCooldown(word);
+  let ok = false;
+  let reason = '';
+  if(!word){
+    reason = '超時未作答';
+  } else if(consecutiveRepeat){
+    const remain = WORD_COOLDOWN_ROUNDS - (game.round - game.wordRounds[word]);
+    reason = '"'+word+'" 還在冷卻中，需再間隔 '+Math.max(remain,1)+' 回合才能重複使用';
+  } else if(!isValidWord(family, word)){
+    reason = '"'+word+'" 不符合條件（必須是只含英文字母、包含「'+family+'」的單字）';
+  } else if(!p.isHuman){
+    ok = true; // 電腦玩家使用內建字庫，已確定為有效單字
+  } else {
+    const dictResult = await isRealWord(word);
+    if(dictResult === false){
+      reason = '"'+word+'" 好像不是有效的英文單字，換一個試試';
+    } else if(dictResult === null){
+      const knownFallback = Object.values(FAMILIES).some(fam=> fam.words.includes(word));
+      ok = knownFallback;
+      if(!ok) reason = '目前無法連線查字典，且這個字不在常見字庫中，請換一個常見單字試試';
+    } else {
+      ok = true;
+    }
+  }
+  if(!ok){
+    log((p.isHuman?'你':p.name)+' 拼字挑戰失敗（'+reason+'）。', p.isHuman);
+    if(purpose==='move'){ render(); setTimeout(nextTurn, 600); }
+    else if(purpose==='buy'){ log('沒有成功購買這塊地。', p.isHuman); render(); setTimeout(nextTurn,600); }
+    else if(purpose==='upgrade'){ log('升級挑戰失敗。', p.isHuman); render(); setTimeout(nextTurn,600); }
+    else if(purpose==='rent'){ payRent(p, family); }
+    return;
+  }
+  game.wordRounds[word] = game.round;
+  if(purpose==='move'){
+    let steps = rollDice();
+    if(usedHint) steps = 1;
+    log((p.isHuman?'你':p.name)+' 成功拼出 "'+word+'"！擲骰子擲出 '+steps+' 點，前進 '+steps+' 格。', p.isHuman);
+    movePlayer(p, steps);
+  } else if(purpose==='buy'){
+    const cost = costForWord(word);
+    if(p.money < cost){
+      log('拼字成功，但代幣不足（需要 '+cost+' 枚），無法購買。', p.isHuman);
+      render(); setTimeout(nextTurn,700);
+      return;
+    }
+    p.money -= cost;
+    const slot = p._pendingSlot;
+    const propKey = family+':'+slot;
+    p.owned[propKey] = (p.owned[propKey]||0) + 1;
+    p.wordCount[family] = (p.wordCount[family]||0)+1;
+    log((p.isHuman?'你':p.name)+' 用單字 "'+word+'" 買下了這塊 '+f.label+' 家族地產！(花費 '+cost+' 幣)', p.isHuman);
+    render(); setTimeout(nextTurn,700);
+  } else if(purpose==='upgrade'){
+    const slot = p._pendingSlot;
+    const propKey = family+':'+slot;
+    p.owned[propKey] = (p.owned[propKey]||0) + 1;
+    const li = levelIndex(p.owned[propKey]);
+    log((p.isHuman?'你':p.name)+' 用單字 "'+word+'" 升級了地產，目前等級：'+LEVELS[li].name+'！', p.isHuman);
+    render(); setTimeout(nextTurn,700);
+  } else if(purpose==='rent'){
+    log((p.isHuman?'你':p.name)+' 用單字 "'+word+'" 成功免除了過路費！', p.isHuman);
+    render(); setTimeout(nextTurn,700);
+  }
+}
+
+function movePlayer(p, steps){
+  let stepsLeft = steps;
+  let passedGo = false;
+  function hopStep(){
+    if(stepsLeft<=0){
+      if(passedGo){
+        p.money += 2;
+        log((p.isHuman?'你':p.name)+' 經過出發點，獲得 2 枚代幣獎勵！', p.isHuman);
+      }
+      render();
+      setTimeout(()=> resolveLanding(p), 350);
+      return;
+    }
+    p.pos = (p.pos+1)%24;
+    if(p.pos===0) passedGo = true;
+    positionTokens(true);
+    stepsLeft--;
+    setTimeout(hopStep, 260);
+  }
+  hopStep();
+}
+
+function resolveLanding(p){
+  const sq = BOARD[p.pos];
+  if(sq.type==='go'){
+    log((p.isHuman?'你':p.name)+' 停在出發點。', p.isHuman);
+    endOfLanding(p);
+  } else if(sq.type==='property'){
+    const slot = p.pos;
+    const owner = ownerOf(sq.family, slot);
+    if(!owner){
+      p._pendingSlot = slot;
+      if(p.isHuman){
+        const f = FAMILIES[sq.family];
+        render(famChip(sq.family)+'<p style="margin:6px 0;font-size:13px;">這是一塊空地。要挑戰拼出新單字來購買嗎？</p>'
+          +'<div class="choice-row">'
+            +'<button class="btn primary small" id="buyYes">挑戰購買</button>'
+            +'<button class="btn small" id="buyNo">跳過</button>'
+          +'</div>');
+        document.getElementById('buyYes').onclick = ()=> beginSpellChallenge('buy', sq.family);
+        document.getElementById('buyNo').onclick = ()=> { log('你選擇不購買這塊地。'); render(); setTimeout(nextTurn,400); };
+      } else {
+        const wantsBuy = p.money >= 2 && Math.random()<0.85;
+        if(wantsBuy) setTimeout(()=> beginSpellChallenge('buy', sq.family), 600);
+        else { log(p.name+' 選擇不購買這塊地。'); render(); setTimeout(nextTurn,600); }
+      }
+    } else if(owner===p){
+      p._pendingSlot = slot;
+      if(p.isHuman){
+        render(famChip(sq.family)+'<p style="margin:6px 0;font-size:13px;">這是你自己的地產。要挑戰拼出新單字來升級嗎？</p>'
+          +'<div class="choice-row">'
+            +'<button class="btn primary small" id="upYes">挑戰升級</button>'
+            +'<button class="btn small" id="upNo">跳過</button>'
+          +'</div>');
+        document.getElementById('upYes').onclick = ()=> beginSpellChallenge('upgrade', sq.family);
+        document.getElementById('upNo').onclick = ()=> { log('你選擇不升級這塊地。'); render(); setTimeout(nextTurn,400); };
+      } else {
+        if(Math.random()<0.6) setTimeout(()=> beginSpellChallenge('upgrade', sq.family), 600);
+        else { render(); setTimeout(nextTurn,600); }
+      }
+    } else {
+      const key = sq.family+':'+slot;
+      const li = levelIndex(owner.owned[key]);
+      const rent = LEVELS[li].rent;
+      if(p.isHuman){
+        const f = FAMILIES[sq.family];
+        render(famChip(sq.family)+'<p style="margin:6px 0;font-size:13px;">這是 '+owner.name+' 的地產（'+LEVELS[li].name+'），過路費 '+rent+' 枚代幣。</p>'
+          +'<div class="choice-row">'
+            +'<button class="btn small" id="payBtn">直接支付 '+rent+' 幣</button>'
+            +'<button class="btn primary small" id="challengeBtn">挑戰拼字免租</button>'
+          +'</div>');
+        document.getElementById('payBtn').onclick = ()=> payRent(p, sq.family, rent);
+        document.getElementById('challengeBtn').onclick = ()=> beginSpellChallenge('rent', sq.family);
+      } else {
+        if(Math.random()<0.4) setTimeout(()=> beginSpellChallenge('rent', sq.family), 600);
+        else payRent(p, sq.family, rent);
+      }
+    }
+  } else if(sq.type==='challenge'){
+    drawCard(p, CHALLENGE_CARDS, '拼讀挑戰卡');
+  } else if(sq.type==='chest'){
+    drawCard(p, CHEST_CARDS, '字彙寶箱卡');
+  } else if(sq.type==='review'){
+    log((p.isHuman?'你':p.name)+' 經過複習關，稍作休息。', p.isHuman);
+    endOfLanding(p);
+  } else if(sq.type==='bonus'){
+    const owned = Object.keys(p.owned);
+    if(owned.length>0){
+      const k = owned[Math.floor(Math.random()*owned.length)];
+      p.owned[k] += 3;
+      const fam = k.split(':')[0];
+      log((p.isHuman?'你':p.name)+' 到達單字獎勵站，'+FAMILIES[fam].label+' 家族免費升級！', p.isHuman);
+    } else {
+      p.money += 3;
+      log((p.isHuman?'你':p.name)+' 到達單字獎勵站，獲得 3 枚代幣！', p.isHuman);
+    }
+    endOfLanding(p);
+  } else if(sq.type==='goreview'){
+    p.pos = 6;
+    p.skip = true;
+    log((p.isHuman?'你':p.name)+' 被送往複習關，下一輪暫停。', p.isHuman);
+    render();
+    setTimeout(nextTurn, 700);
+  }
+}
+
+function payRent(p, family, rentOverride){
+  const slot = p.pos!==undefined ? p.pos : null;
+  let rent = rentOverride;
+  if(rent===undefined){
+    const key = family+':'+p.pos;
+    const owner = ownerOf(family, p.pos);
+    const li = owner? levelIndex(owner.owned[key]) : 0;
+    rent = LEVELS[li].rent;
+  }
+  const owner = ownerOf(family, p.pos);
+  if(p.money >= rent){
+    p.money -= rent;
+    if(owner) owner.money += rent;
+    log((p.isHuman?'你':p.name)+' 支付了 '+rent+' 枚代幣的過路費。', p.isHuman);
+  } else {
+    const shortfall = rent - p.money;
+    if(owner) owner.money += p.money;
+    p.money = 0;
+    log((p.isHuman?'你':p.name)+' 代幣不足，只能支付部分過路費。', p.isHuman);
+    const keys = Object.keys(p.owned);
+    if(keys.length>0){
+      const k = keys[0];
+      delete p.owned[k];
+      log((p.isHuman?'你':p.name)+' 被迫變賣一塊地產抵債。', p.isHuman);
+    } else {
+      p.out = true;
+      log((p.isHuman?'你':p.name)+' 已經出局了！', p.isHuman);
+    }
+  }
+  render();
+  setTimeout(nextTurn, 700);
+}
+
+const CHALLENGE_CARDS = [
+  {name:'聽音辨字', run:(p)=>{ p.money+=1; log('聽音辨字挑戰成功，獲得 1 枚代幣。', p.isHuman); }},
+  {name:'造句小挑戰', run:(p)=>{ movePlayer(p,1); return true; }},
+  {name:'快問快答', run:(p)=>{ p.money+=1; log('快問快答答對，獲得 1 枚代幣。', p.isHuman); }},
+  {name:'反義詞挑戰', run:(p)=>{ movePlayer(p,2); return true; }},
+  {name:'複習加分', run:(p)=>{ p.money+=2; log('複習加分成功，獲得 2 枚代幣。', p.isHuman); }},
+];
+const CHEST_CARDS = [
+  {name:'單字量進步獎', run:(p)=>{ p.money+=2; log('單字量進步獎，獲得 2 枚代幣。', p.isHuman); }},
+  {name:'幸運字卡', run:(p)=>{ const k=Object.keys(p.owned); if(k.length){ p.owned[k[0]]+=3; log('幸運字卡：地產免費升級一級！', p.isHuman);} else { p.money+=2; log('幸運字卡：暫無地產，改領 2 枚代幣。', p.isHuman);} }},
+  {name:'小老師加分', run:(p)=>{ p.money+=1; log('小老師加分，獲得 1 枚代幣。', p.isHuman); }},
+  {name:'拼讀失誤', run:(p)=>{ p.pos=6; p.skip=true; log('拼讀失誤，被送回複習關重新練習。', p.isHuman); }},
+  {name:'詞彙大挑戰', run:(p)=>{ p.money+=3; log('詞彙大挑戰成功，獲得 3 枚代幣！', p.isHuman); }},
+];
+
+function drawCard(p, deck, deckName){
+  const card = deck[Math.floor(Math.random()*deck.length)];
+  log((p.isHuman?'你':p.name)+' 抽到「'+card.name+'」（'+deckName+'）。', p.isHuman);
+  const moved = card.run(p);
+  if(moved){
+    return;
+  }
+  render();
+  setTimeout(nextTurn, 700);
+}
+
+function endOfLanding(p){
+  render();
+  setTimeout(nextTurn, 600);
+}
+
+function scoreOf(p){
+  let val = p.money;
+  for(const k in p.owned){ val += LEVEL_VALUE[levelIndex(p.owned[k])]; }
+  return val;
+}
+
+function endGame(){
+  game.gameOver = true;
+  const ranked = [...game.players].sort((a,b)=> scoreOf(b)-scoreOf(a));
+  const overlay = document.getElementById('overlay');
+  overlay.style.display='flex';
+  overlay.innerHTML = '<div class="card">'
+    +'<h2>遊戲結束！</h2>'
+    +'<p style="color:#7A7261;font-size:13px;margin-bottom:14px;">依代幣＋地產價值計算最終總分</p>'
+    + ranked.map((p,i)=>'<div class="rank"><span><span class="dot" style="background:'+p.color+';display:inline-block;width:11px;height:11px;border-radius:50%;margin-right:6px;"></span>'+(i===0?'🏆 ':'')+p.name+(p.out?'（出局）':'')+'</span><span>'+scoreOf(p)+' 分</span></div>').join('')
+    +'<button class="btn primary" id="playAgain" style="margin-top:16px;width:100%;">再玩一次</button>'
+    +'</div>';
+  document.getElementById('playAgain').onclick = ()=>{ overlay.style.display='none'; showSetup(); };
+}
+
+function startGame(humanCount){
+  game = freshGame(humanCount);
+  initBoard();
+  renderFamLegend();
+  log('遊戲開始！輪流拼出字母串家族的單字前進，買下地產，看誰的字彙分數最高。', true);
+  render();
+  startTurn();
+}
+
+function showSetup(){
+  initBoard();
+  renderFamLegend();
+  document.getElementById('playersList').innerHTML = '<p style="font-size:12px;color:#8A7F63;">請先選擇人數開始遊戲</p>';
+  const overlay = document.getElementById('overlay');
+  overlay.style.display='flex';
+  overlay.innerHTML = '<div class="card">'
+    +'<h2>選擇人類玩家人數</h2>'
+    +'<p style="color:#7A7261;font-size:13px;margin-bottom:14px;">遊戲共 3 位玩家，人數不足時自動由電腦玩家補齊。</p>'
+    +'<div class="choice-row" style="justify-content:center;gap:10px;">'
+      +[1,2,3].map(n=>'<button class="btn primary" data-n="'+n+'" style="min-width:70px;">'+n+' 人</button>').join('')
+    +'</div>'
+    +'</div>';
+  overlay.querySelectorAll('[data-n]').forEach(btn=>{
+    btn.onclick = ()=>{ overlay.style.display='none'; startGame(parseInt(btn.dataset.n,10)); };
+  });
+}
+
+document.getElementById('restartBtn').onclick = ()=>{
+  document.getElementById('overlay').style.display='none';
+  showSetup();
+};
+document.getElementById('helpBtn').onclick = ()=>{
+  const el = document.getElementById('helpPanel');
+  if(el.style.display==='none'){
+    el.style.display='block';
+    el.innerHTML = '<b>玩法</b>：開始前先選擇 1–3 位人類玩家，人數不足時由電腦玩家補齊，共 3 人對戰（棋子顏色為藍、紅、綠）。'
+      +' 每回合抽到一個字母串（如 at），限時 45 秒內輸入一個「包含這個字母串」的英文單字即可，不限字首、字中或字尾，例如 at 可以是 fat（字尾）、attack（字首），也可以是 water（字中）。系統會連線字典確認是否為真正的英文單字，若沒有網路則改用內建常見字庫判斷。'
+      +' 拼字成功後要擲一顆六面骰子（1–6 點），骰到幾點就前進幾格！'
+      +' 同一個單字用過之後會進入冷卻，需要間隔 '+WORD_COOLDOWN_ROUNDS+' 個回合之後才能重複使用同一個字！'
+      +' 想不到單字時可以按「需要提示」，但這次只能前進 1 格，且每位玩家一場遊戲最多可使用 '+MAX_HINTS+' 次提示。'
+      +' 走到空地可以挑戰拼出「新單字」來買下地產；走到別人的地產要付過路費，也可以挑戰拼字來免租。'
+      +' 已被買下的地產格會顯示與該玩家棋子相同的顏色。'
+      +' 累積不同單字數量可以讓地產升級（小屋、大屋、飯店），過路費也會提高。'
+      +' 走到「前往複習關」會被送去休息一輪；走到「單字獎勵站」可以免費升級地產。'
+      +' 遊戲進行 '+ROUNDS+' 輪後，依代幣加地產價值計算總分，分數最高獲勝！';
+  } else {
+    el.style.display='none';
+  }
+};
+
+showSetup();
+</script>
+</body>
+</html>
