@@ -108,7 +108,7 @@ h1,h2,h3{font-family:'Baloo 2','Noto Sans TC',sans-serif; margin:0;}
 .tokenLayer{position:absolute;inset:0;pointer-events:none;z-index:5;}
 .piece{position:absolute;top:0;left:0;width:0;height:0;}
 .piece-body{
-  width:18px;height:26px;
+  width:36px;height:52px;
   transform:translate(-50%,-100%);
   transform-origin:50% 100%;
 }
@@ -197,8 +197,13 @@ h1,h2,h3{font-family:'Baloo 2','Noto Sans TC',sans-serif; margin:0;}
 .overlay .rank{display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px dashed var(--line);font-size:14px;font-weight:700;}
 .overlay .rank:last-child{border-bottom:none;}
 
-.help{font-size:12.5px;color:#7A7261;line-height:1.7;background:#F6F1E4;border-radius:10px;padding:10px 12px;}
+.help{font-size:12.5px;color:#7A7261;line-height:1.7;background:#F6F1E4;border-radius:10px;padding:12px 14px;}
 .help b{color:var(--teal-dark);}
+.help h4{margin:14px 0 5px;font-size:13.5px;color:var(--teal-dark);}
+.help h4:first-child{margin-top:0;}
+.help ol,.help ul{margin:2px 0 4px;padding-left:19px;}
+.help li{margin-bottom:4px;}
+.help .tag{display:inline-block;background:#EADFC4;color:#6B5F45;border-radius:5px;padding:0 5px;font-weight:700;font-size:11.5px;}
 
 @media (max-width:760px){
   .side-col{flex:1 1 100%;}
@@ -246,44 +251,252 @@ h1,h2,h3{font-family:'Baloo 2','Noto Sans TC',sans-serif; margin:0;}
 <div id="overlay" class="overlay" style="display:none;"></div>
 
 <script>
-const FAMILIES = {
-  at:{label:'at', color:'var(--at)', words:['cat','hat','bat','mat','rat','sat','fat','that','flat','chat','what','eat','water','attack','attach','attempt','atlas','matter','battle','pattern','satellite','statue','natural','chatter','scatter','platter','attitude','athlete']},
-  an:{label:'an', color:'var(--an)', words:['can','man','fan','pan','ran','van','plan','than','began','banana','orange','dance','animal','planet','grand','brand','stand','sand','land','hand','handle','candle','answer','dragon','organ','elephant','japan','canada','transport']},
-  og:{label:'og', color:'var(--og)', words:['dog','log','fog','jog','frog','blog','dogs','foggy','jogger','catalog','dialogue','cognac','yogurt','ecology']},
-  un:{label:'un', color:'var(--un)', words:['sun','run','fun','bun','gun','spun','stun','shun','under','lunch','sunday','jungle','bundle','punish','uncle','hunt','fungus','thunder','fortune','tunnel','bunny','hundred']},
-  ig:{label:'ig', color:'var(--ig)', words:['big','pig','dig','wig','fig','twig','night','light','right','eight','sign','design','fight','might','tight','bright','flight','giant','digital','original','signal','ignore']},
-  ay:{label:'ay', color:'var(--ay)', words:['day','play','say','way','may','stay','today','away','gray','always','crayon','player','prayer','mayor','layer','payment','display','delay','decay','birthday','holiday']},
-  ee:{label:'ee', color:'var(--ee)', words:['see','bee','tree','free','three','agree','coffee','knee','sweet','green','sheep','feet','meet','need','seed','speed','screen','between','degree','employee','referee','canteen']},
-  ook:{label:'ook', color:'var(--ook)', words:['book','look','cook','took','hook','shook','brook','cookie','notebook','cooking','booking','outlook','handbook','textbook','mistook']},
-};
-const FAMILY_KEYS = Object.keys(FAMILIES);
+const COLOR_SLOTS = ['var(--at)','var(--an)','var(--og)','var(--un)','var(--ig)','var(--ay)','var(--ee)','var(--ook)'];
 
-const BOARD = [
-  {type:'go', label:'出發 GO'},
-  {type:'property', family:'at', label:'at 家族 ①'},
-  {type:'property', family:'an', label:'an 家族 ①'},
-  {type:'challenge', label:'拼讀挑戰卡'},
-  {type:'property', family:'og', label:'og 家族 ①'},
-  {type:'property', family:'og', label:'og 家族 ②'},
-  {type:'review', label:'複習關'},
-  {type:'property', family:'un', label:'un 家族 ①'},
-  {type:'property', family:'un', label:'un 家族 ②'},
-  {type:'chest', label:'字彙寶箱卡'},
-  {type:'property', family:'ig', label:'ig 家族 ①'},
-  {type:'property', family:'ig', label:'ig 家族 ②'},
-  {type:'bonus', label:'單字獎勵站'},
-  {type:'property', family:'ay', label:'ay 家族 ①'},
-  {type:'property', family:'ay', label:'ay 家族 ②'},
-  {type:'challenge', label:'拼讀挑戰卡'},
-  {type:'property', family:'ee', label:'ee 家族 ①'},
-  {type:'property', family:'ee', label:'ee 家族 ②'},
-  {type:'goreview', label:'前往複習關'},
-  {type:'property', family:'ook', label:'ook 家族 ①'},
-  {type:'property', family:'ook', label:'ook 家族 ②'},
-  {type:'chest', label:'字彙寶箱卡'},
-  {type:'property', family:'at', label:'at 家族 ②'},
-  {type:'property', family:'an', label:'an 家族 ②'},
+// 較大的小學常見字根字庫（16 組），每次開新局會從中隨機挑 8 組上場，讓每局的字母串都不一樣。
+const MASTER_FAMILY_BANK = {
+  at:['cat','hat','bat','mat','rat','sat','fat','that','flat','chat','what','eat','water','attack','attach','attempt','atlas','matter','pattern','natural','chatter','scatter','platter','attitude','athlete','combat','format'],
+  an:['can','man','fan','pan','ran','van','plan','than','began','banana','orange','dance','animal','planet','grand','brand','stand','sand','land','hand','handle','candle','answer','dragon','organ','elephant','canada','transport','ancient'],
+  og:['dog','log','fog','jog','frog','blog','dogs','foggy','jogger','catalog','dialogue','yogurt','cognac','ecology','groggy'],
+  un:['sun','run','fun','bun','gun','spun','stun','shun','under','lunch','sunday','jungle','bundle','punish','uncle','hunt','fungus','thunder','fortune','tunnel','bunny','hundred','funny','puncture','uninstall','unhappy','unable','unfair','unlock','unicorn','union','universe','until','unique','university','unusual','unknown','unpack','undo','continue','announce','pronounce','mountain','fountain','amount','account','discount','country'],
+  ig:['big','pig','dig','wig','fig','twig','night','light','right','eight','sign','design','fight','might','tight','bright','flight','giant','digital','original','signal','ignore','figure'],
+  ay:['day','play','say','way','may','stay','today','away','gray','always','crayon','player','prayer','mayor','layer','payment','display','delay','decay','birthday','holiday'],
+  ee:['see','bee','tree','free','three','agree','coffee','knee','sweet','green','sheep','feet','meet','need','seed','speed','screen','between','degree','employee','referee','canteen','fifteen','sixteen'],
+  ook:['book','look','cook','took','hook','shook','brook','cookie','notebook','cooking','booking','outlook','handbook','textbook','mistook','rookie'],
+  ing:['sing','king','ring','wing','bring','thing','spring','string','morning','evening','singer','ringing','shopping','running','jumping','swimming','exciting','interesting','building','painting'],
+  ack:['back','pack','sack','tack','black','track','snack','crack','attack','jacket','racket','package','backpack','tracker','practice'],
+  ock:['rock','sock','lock','dock','clock','block','shock','knock','socks','pocket','rocket','unlock','stocking','shocking'],
+  ip:['tip','zip','lip','rip','ship','trip','skip','flip','chip','clip','slip','equip','tulip','gossip','zipper','shipping'],
+  ot:['hot','pot','dot','got','not','lot','spot','shot','knot','forgot','robot','cannot','bottle','pilot','rotate'],
+  ell:['bell','sell','tell','well','shell','smell','spell','swell','yellow','umbrella','seashell','jelly','hello','parallel'],
+  ug:['bug','hug','mug','rug','dug','tug','jug','plug','drug','shrug','struggle','smuggle','jugular'],
+  ine:['nine','pine','line','fine','mine','shine','spine','vine','define','engine','imagine','sunshine','machine','combine','wine'],
+};
+
+// 教育部國小1200主題式必背單字（內建於本機，離線也能判斷，不依賴網路查詢）
+const ELEMENTARY_WORDLIST = [
+  "able","about","above","abroad","absent","accept","accident","across","act","action","active","activity","actor",
+  "actress","actually","add","address","admire","adult","advertisement","advice","affect","afraid","after",
+  "afternoon","again","against","age","ago","agree","ahead","aim","air","airlines","airplane","airport","alarm",
+  "album","alike","alive","all","allow","almost","alone","along","aloud","alphabet","already","also","although",
+  "altogether","always","ambulance","america","american","among","amount","ancient","and","angel","anger","angry",
+  "animal","ankle","another","answer","ant","any","anybody","anyone","anything","anywhere","apartment","apologize",
+  "appear","apple","appreciate","april","are","area","argue","arm","armchair","army","around","arrange","arrive",
+  "art","artist","ask","asleep","assistant","assume","attack","attention","august","aunt","autumn","available",
+  "avoid","away","baby","back","backpack","backward","bad","badminton","bag","bake","bakery","balcony","ball",
+  "balloon","banana","band","bank","barbecue","barber","bark","base","baseball","basement","basic","basket",
+  "basketball","bat","bath","bathe","bathroom","beach","bean","bear","beard","beat","beaten","beautiful","beauty",
+  "because","become","bed","bedroom","bee","beef","been","beer","before","begin","beginner","beginning","begun",
+  "behave","behind","believe","bell","belong","below","belt","bench","bend","bent","beside","besides","bet","betted",
+  "between","beyond","bicycle","big","bike","bill","biology","bird","birthday","bite","bitten","bitter","black",
+  "blackboard","blame","blank","blanket","bless","blind","block","blood","blouse","blow","blown","blue","board",
+  "boat","body","boil","bomb","bone","book","bookcase","bookstore","bored","boring","born","borne","borrow","boss",
+  "both","bother","bottle","bottom","bought","bow","bowl","bowling","box","boy","branch","brave","bread","break",
+  "breakfast","brick","bridge","bright","bring","broad","broadcast","broken","brother","brought","brown","brunch",
+  "brush","bucket","buffet","bug","build","building","built","bun","bundle","burger","burn","burnt","burst","bus",
+  "business","businessman","busy","but","butter","butterfly","button","buy","bye","cabbage","cable","cafeteria",
+  "cage","cake","calendar","call","calm","came","camera","camp","camping","campus","can","cancel","cancer","candle",
+  "candy","cap","captain","car","card","care","careful","careless","carpet","carrier","carrot","carry","cartoon",
+  "case","cash","cassette","castle","cat","catch","caught","cause","ceiling","celebrate","cellphone","cent","center",
+  "centimeter","central","century","cereal","chair","chalk","chance","change","channel","character","charge","chart",
+  "chase","cheap","cheat","check","cheer","cheese","chemistry","chess","chicken","child","childhood","childish",
+  "childlike","chin","china","chinese","chocolate","choice","choose","chopsticks","chosen","christmas","chubby",
+  "church","circle","city","clap","class","classical","classmate","classroom","clean","clear","clerk","clever",
+  "climate","climb","climbing","clock","close","closet","clothes","cloud","cloudy","club","coach","coast","coat",
+  "cockroach","coffee","coin","cola","cold","collect","college","color","colorful","comb","come","comfortable",
+  "comic","command","comment","common","company","compare","complain","complete","computer","concern","conditioner",
+  "confident","confuse","congratulation","consider","considerate","contact","continue","contract","control",
+  "convenience","convenient","conversation","cook","cookie","cooking","cool","copy","corn","corner","correct","cost",
+  "cotton","couch","cough","could","count","country","couple","courage","course","court","cousin","cover","cow",
+  "cowboy","crab","crayon","crazy","cream","create","credit","crime","cross","crowd","crowded","cruel","cry",
+  "culture","cup","cure","curious","current","curtain","curve","custom","customer","cut","cute","dad","daddy","daily",
+  "damage","dance","dancing","danger","dangerous","dark","date","daughter","dawn","day","dead","deaf","deal","dealt",
+  "dear","death","debate","december","decide","decision","decorate","decrease","deep","deer","degree","delicious",
+  "deliver","dentist","department","depend","describe","desert","design","desire","desk","dessert","detect","develop",
+  "dial","diamond","diary","dictionary","did","die","diet","difference","different","difficult","difficulty","dig",
+  "diligent","dining","dinner","dinosaur","diplomat","direct","direction","dirty","disappear","discover","discuss",
+  "discussion","dish","dishonest","distance","distant","divide","dizzy","doctor","dodge","does","dog","doll","dollar",
+  "dolphin","done","donkey","door","dot","double","doubt","doughnut","down","downstairs","downtown","dozen","dragon",
+  "drama","drank","draw","drawer","drawing","dream","dreamt","dress","dresser","drew","drink","drive","driven",
+  "driver","drop","drugstore","drum","dry","dryer","duck","dug","dumb","dumpling","during","duty","each","eagle",
+  "ear","early","earn","earrings","earth","ease","east","easter","easy","eat","eaten","edge","education","effort",
+  "egg","eight","eighteen","eighty","either","elder","elect","electric","elementary","elephant","eleven","else",
+  "email","embarrass","emotion","emphasize","employ","end","enemy","energetic","energy","engine","engineer","english",
+  "enjoy","enough","enter","entrance","envelope","environment","envy","equal","eraser","error","especially","eve",
+  "even","evening","event","ever","every","everybody","everyone","everything","everywhere","evil","exam","example",
+  "excellent","except","excite","excited","exciting","excuse","exercise","exist","exit","expect","expensive",
+  "experience","explain","express","extra","eye","face","fact","factory","fail","fair","fall","false","family",
+  "famous","fan","fancy","fantastic","far","farm","farmer","fashionable","fast","fat","father","fathers","faucet",
+  "fault","favorite","fear","february","fed","fee","feed","feel","feeling","fell","felt","fence","festival","fever",
+  "few","fifteen","fifty","fight","fill","film","final","finally","find","fine","finger","finish","fire","first",
+  "fish","fisherman","fishing","fit","five","fix","flag","flashlight","flat","flight","floor","flour","flower",
+  "flown","flu","flute","fly","focus","fog","foggy","follow","food","fool","foolish","foot","football","for",
+  "foreign","foreigner","forest","forgave","forget","forgive","forgot","forgotten","fork","form","formal","former",
+  "forty","forward","fought","found","four","fourteen","fox","frank","free","freedom","freezer","freezing","french",
+  "fresh","friday","friend","friendly","friendship","fries","frighten","frisbee","frog","from","front","fruit","fry",
+  "full","fun","funny","furniture","future","gain","game","garage","garbage","garden","gas","gate","gather","general",
+  "generous","genius","gentle","gentleman","geography","gesture","get","ghost","giant","gift","girl","give","given",
+  "glad","glass","glasses","glove","glue","goal","goat","god","gold","golden","golf","gone","good","goodbye",
+  "goodness","goose","got","gotten","government","grade","gram","granddaughter","grandfather","grandma","grandmother",
+  "grandpa","grandson","grape","grass","gray","great","greedy","green","greet","grew","ground","group","grow","guard",
+  "guava","guess","guest","guide","guitar","gun","guy","gym","habit","had","hair","haircut","half","hall","halloween",
+  "ham","hamburger","hammer","hand","handkerchief","handle","handsome","hang","hanger","happen","happy","hard",
+  "hardly","has","hat","hate","have","head","headache","health","healthy","hear","heard","heart","heat","heater",
+  "heavy","height","held","helicopter","hello","help","helpful","hen","her","here","hero","hers","herself","hey",
+  "hid","hidden","hide","high","highway","hike","hiking","hill","him","himself","hip","hippo","hire","his","history",
+  "hit","hobby","hold","hole","holiday","home","homesick","homework","honest","honesty","honey","hop","hope",
+  "horrible","horse","hospital","host","hot","hotel","hour","house","housewife","housework","how","however","hug",
+  "human","humble","humid","humor","humorous","hundred","hung","hunger","hungry","hunt","hunter","hurry","hurt",
+  "husband","ice","idea","ignore","ill","imagine","impolite","importance","important","impossible","improve","inch",
+  "include","income","increase","independent","indicate","influence","information","ink","insect","inside","insist",
+  "inspire","instant","instrument","intelligent","interested","interesting","international","internet","interrupt",
+  "interview","into","introduce","invent","invitation","invite","iron","island","its","itself","jacket","jam",
+  "january","jazz","jealous","jeans","jeep","job","jog","jogging","join","joke","journalist","joy","judge","juice",
+  "july","jump","june","junior","kangaroo","keep","kept","ketchup","key","kick","kid","kill","kilogram","kilometer",
+  "kind","kindergarten","king","kingdom","kiss","kitchen","kite","kitten","knee","knew","knife","knock","know",
+  "knowledge","koala","lack","lady","laid","lake","lamb","lamp","land","language","lantern","large","last","late",
+  "later","latest","latter","laugh","law","lawyer","lay","lazy","lead","leader","leaf","learn","learnt","least",
+  "leave","leaves","led","left","leg","lemon","lend","lens","lent","less","lesson","let","letter","lettuce","level",
+  "library","lick","lid","lie","life","lift","light","lightning","like","likely","limit","line","link","lion","lip",
+  "liquid","list","listen","lit","liter","little","live","living","loaf","local","lock","locker","lonely","long",
+  "look","looking","lose","loser","lost","lot","loud","love","lovely","low","lucky","lunch","maam","machine","mad",
+  "made","magazine","magic","magician","mail","mailman","main","major","make","male","mall","man","manager","mango",
+  "manner","many","map","march","mark","marker","market","married","marry","marvelous","mask","mass","master","mat",
+  "match","math","mathematics","matter","maximum","may","maybe","meal","mean","meaning","meant","measure","meat",
+  "mechanic","medicine","medium","meet","meeting","member","memory","mens","menu","message","met","metal","meter",
+  "method","microwave","middle","midnight","might","mile","milk","million","mind","mine","minor","minus","minute",
+  "mirror","miss","mistake","mix","model","modern","mom","moment","mommy","monday","money","monkey","monster","month",
+  "moon","mop","more","morning","mosquito","most","mother","mothers","motion","motorcycle","mountain","mouse","mouth",
+  "move","movement","movie","mrs","mrt","much","mud","music","musician","must","myself","nail","name","napkin",
+  "narrow","nation","national","natural","nature","naughty","near","nearly","necessary","neck","necklace","need",
+  "needle","negative","neighbor","neither","nephew","nervous","nest","net","never","new","news","newspaper","next",
+  "nice","niece","night","nine","nineteen","ninety","nobody","nod","noise","noisy","none","noodle","noon","nor",
+  "north","nose","not","note","notebook","nothing","notice","novel","november","now","number","nurse","nut","obey",
+  "object","ocean","oclock","october","off","offer","office","officer","often","oil","old","omit","once","one",
+  "onion","only","open","operation","opinion","orange","order","ordinary","other","our","ours","ourselves","out",
+  "outside","oven","over","overpass","overseas","oversleep","overslept","own","owner","pack","package","page","paid",
+  "pain","painful","paint","painter","pair","pajamas","pale","pan","panda","pants","papaya","paper","pardon","parent",
+  "park","parking","parrot","part","partner","party","pass","passenger","past","paste","path","patient","pattern",
+  "pause","pay","peace","peaceful","peach","pear","pen","pencil","people","pepper","perfect","perhaps","period",
+  "person","personal","pet","phone","photo","physical","physics","piano","pick","picnic","picture","pie","piece",
+  "pig","pigeon","pile","pillow","pin","pineapple","pink","pipe","pizza","place","plain","plan","plane","planet",
+  "plant","plate","platform","play","player","playground","pleasant","please","pleasure","plus","pocket","poem",
+  "point","poison","police","polite","pollute","pollution","pond","pool","poor","pop","popcorn","popular",
+  "population","pork","position","positive","possible","post","postcard","pot","potato","pound","powder","power",
+  "practice","praise","pray","precious","prepare","present","president","pressure","pretty","price","priest",
+  "primary","prince","princess","principal","principle","print","printer","private","prize","probably","problem",
+  "produce","production","program","progress","project","promise","pronounce","protect","proud","provide","public",
+  "pull","pump","pumpkin","punish","puppy","purple","purpose","purse","push","put","puzzle","quarter","queen",
+  "question","quick","quiet","quit","quite","quiz","rabbit","race","radio","railroad","railway","rain","rainbow",
+  "raincoat","rainy","raise","ran","rang","rare","rat","rather","reach","read","ready","real","realize","really",
+  "reason","receive","record","recorder","recover","rectangle","recycle","red","refrigerator","refuse","regret",
+  "regular","reject","relative","remember","remind","rent","repair","repeat","report","reporter","respect",
+  "responsible","rest","restaurant","restroom","result","return","review","revise","rice","rich","ridden","ride",
+  "right","ring","rise","risen","river","road","rob","robot","roc","rock","role","roll","roller","roof","room","root",
+  "rope","rose","round","row","rub","rude","ruin","rule","ruler","run","running","rush","sad","safe","safety","said",
+  "sail","sailing","sailor","salad","sale","salesman","salt","same","sample","sand","sandwich","sang","sat","satisfy",
+  "saturday","sauce","saucer","save","saw","say","scared","scarf","scene","scenery","school","science","scientist",
+  "scooter","score","screen","sea","seafood","search","season","seat","second","secondary","secret","secretary",
+  "section","see","seed","seem","seesaw","seldom","select","selfish","sell","semester","send","senior","sense","sent",
+  "sentence","september","serious","servant","serve","service","set","seven","seventeen","seventy","several","shake",
+  "shaken","shall","shape","share","shark","sharp","she","sheep","sheet","shelf","shine","ship","shirt","shoe",
+  "shoes","shone","shoot","shop","shopkeeper","shore","short","shorts","shot","should","shoulder","shout","show",
+  "shower","shown","shrimp","shut","shy","sick","side","sidewalk","sight","sign","silence","silent","silly","silver",
+  "similar","simple","since","sincere","sing","singer","singing","single","sink","sir","sister","sit","sitter","six",
+  "sixteen","sixty","size","skate","skating","ski","skiing","skill","skillful","skin","skinny","skirt","sky","sleep",
+  "sleepy","slender","slept","slice","slide","slim","slippers","slow","small","smart","smell","smelt","smile","smoke",
+  "snack","snail","snake","sneakers","sneaky","snow","snowman","snowy","soap","soccer","social","society","socks",
+  "soda","sofa","soft","softball","sold","soldier","solve","some","somebody","someone","something","sometimes",
+  "somewhere","son","song","soon","sore","sorry","soul","sound","soup","sour","south","soy","space","spaghetti",
+  "speak","speaker","special","sped","speech","speed","spell","spelt","spend","spent","spider","spirit","spoken",
+  "spoon","sports","spot","spread","spring","square","stairs","stamp","stand","star","start","state","station",
+  "stationery","stay","steak","steal","steam","step","still","stingy","stolen","stomach","stomachache","stone",
+  "stood","stop","store","storm","stormy","story","stove","straight","strange","stranger","straw","strawberry",
+  "stream","street","strike","strong","student","study","stupid","style","subject","subway","succeed","success",
+  "successful","such","sudden","sugar","suggest","suit","summer","sun","sunday","sunny","super","supermarket",
+  "supper","support","sure","surf","surprise","surprised","survive","swallow","swan","sweater","sweep","sweet",
+  "swept","swim","swimming","swimsuit","swing","swum","symbol","system","table","tail","taiwan","take","talent",
+  "talk","talkative","tall","tangerine","tank","tape","taste","taught","taxi","tea","teach","teacher","teachers",
+  "team","teapot","tear","teenager","telephone","television","tell","temperature","temple","ten","tennis","tent",
+  "tenth","term","terrible","terrific","test","textbook","than","thank","thanksgiving","that","the","theater","their",
+  "theirs","them","themselves","then","there","therefore","these","they","thick","thief","thin","thing","think",
+  "third","thirsty","thirteen","thirty","this","those","though","thought","thousand","three","threw","throat",
+  "through","throw","thumb","thunder","thursday","ticket","tidy","tie","tiger","till","time","tiny","tire","tired",
+  "title","toast","today","toe","tofu","together","toilet","told","tomato","tomorrow","tongue","tonight","too","took",
+  "tool","tooth","toothache","toothbrush","top","topic","torn","total","touch","toward","towel","tower","town","toy",
+  "trace","trade","tradition","traditional","traffic","train","trap","trash","travel","treasure","treat","tree",
+  "triangle","trick","trip","trouble","trousers","truck","true","trumpet","trust","truth","try","tshirt","tub","tube",
+  "tuesday","tunnel","turkey","turn","turtle","twelve","twenty","two","type","typhoon","ugly","umbrella","uncle",
+  "under","underline","underpass","understand","understood","underwear","unhappy","uniform","unique","universe",
+  "university","until","upon","upstairs","usa","use","useful","usual","usually","vacation","valentines","valley",
+  "valuable","value","vegetable","vendor","very","vest","victory","video","village","vinegar","violin","visit",
+  "visitor","vocabulary","voice","volleyball","vote","waist","wait","waiter","waitress","wake","walk","walkman",
+  "wall","wallet","want","war","warm","was","wash","waste","watch","water","waterfalls","watermelon","wave","way",
+  "weak","wear","weather","wedding","wednesday","week","weekday","weekend","weight","welcome","well","were","west",
+  "wet","whale","what","wheel","when","where","whether","which","while","white","who","whole","whose","why","wide",
+  "wife","wild","will","win","wind","window","windy","wing","winner","winter","wise","wish","with","without","wok",
+  "woke","wolf","woman","won","wonderful","wood","woods","word","work","workbook","worker","working","world","worm",
+  "worn","worry","would","wound","wrist","write","writer","wrong","wrote","yard","yeah","year","years","yell",
+  "yellow","yes","yesterday","yet","you","young","your","yours","yourself","yourselves","youth","yummy","zebra",
+  "zero","zoo",
 ];
+
+// 用來做離線單字驗證的完整已知單字庫（合併所有字根家族的單字 + 國小1200必背單字）
+const KNOWN_WORDS = new Set([
+  ...Object.values(MASTER_FAMILY_BANK).flat().map(w=>w.toLowerCase()),
+  ...ELEMENTARY_WORDLIST,
+]);
+
+const BOARD_TEMPLATE = [
+  {type:'go', label:'出發 GO'},
+  {type:'property', slot:0, suffix:'①'},
+  {type:'property', slot:1, suffix:'①'},
+  {type:'challenge', label:'拼讀挑戰卡'},
+  {type:'property', slot:2, suffix:'①'},
+  {type:'property', slot:2, suffix:'②'},
+  {type:'review', label:'複習關'},
+  {type:'property', slot:3, suffix:'①'},
+  {type:'property', slot:3, suffix:'②'},
+  {type:'chest', label:'字彙寶箱卡'},
+  {type:'property', slot:4, suffix:'①'},
+  {type:'property', slot:4, suffix:'②'},
+  {type:'bonus', label:'單字獎勵站'},
+  {type:'property', slot:5, suffix:'①'},
+  {type:'property', slot:5, suffix:'②'},
+  {type:'challenge', label:'拼讀挑戰卡'},
+  {type:'property', slot:6, suffix:'①'},
+  {type:'property', slot:6, suffix:'②'},
+  {type:'goreview', label:'前往複習關'},
+  {type:'property', slot:7, suffix:'①'},
+  {type:'property', slot:7, suffix:'②'},
+  {type:'chest', label:'字彙寶箱卡'},
+  {type:'property', slot:0, suffix:'②'},
+  {type:'property', slot:1, suffix:'②'},
+];
+
+let FAMILIES = {};
+let FAMILY_KEYS = [];
+let BOARD = [];
+
+function randomizeFamiliesAndBoard(){
+  const allKeys = Object.keys(MASTER_FAMILY_BANK);
+  // 洗牌
+  for(let i=allKeys.length-1;i>0;i--){
+    const j = Math.floor(Math.random()*(i+1));
+    [allKeys[i],allKeys[j]] = [allKeys[j],allKeys[i]];
+  }
+  const chosen = allKeys.slice(0,8);
+  FAMILIES = {};
+  chosen.forEach((key, idx)=>{
+    FAMILIES[key] = {label:key, color:COLOR_SLOTS[idx], words: MASTER_FAMILY_BANK[key]};
+  });
+  FAMILY_KEYS = chosen;
+  BOARD = BOARD_TEMPLATE.map(def=>{
+    if(def.type!=='property') return {...def};
+    const family = chosen[def.slot];
+    return {type:'property', family, label: family+' 家族 '+def.suffix};
+  });
+}
 
 const LEVELS = [
   {name:'空地', need:0, rent:1},
@@ -443,7 +656,7 @@ function renderBoardState(){
   positionTokens(false);
 }
 
-const PIECE_OFFSETS = [[-9,0],[9,0],[0,10]];
+const PIECE_OFFSETS = [[-14,0],[14,0],[0,13]];
 const PAWN_SVG =
   '<svg viewBox="0 0 24 32" xmlns="http://www.w3.org/2000/svg">'
     +'<ellipse cx="12" cy="29.5" rx="7.2" ry="2" fill="rgba(0,0,0,.28)"/>'
@@ -634,12 +847,15 @@ const dictCache = {};
 async function isRealWord(word){
   if(Object.prototype.hasOwnProperty.call(dictCache, word)) return dictCache[word];
   try{
-    const res = await fetch('https://api.dictionaryapi.dev/api/v2/entries/en/'+encodeURIComponent(word));
+    const controller = new AbortController();
+    const timer = setTimeout(()=> controller.abort(), 4000);
+    const res = await fetch('https://api.dictionaryapi.dev/api/v2/entries/en/'+encodeURIComponent(word), {signal: controller.signal});
+    clearTimeout(timer);
     const ok = res.ok;
     dictCache[word] = ok;
     return ok;
   } catch(e){
-    return null; // 無法連線，交由備援字庫判斷
+    return null; // 無法連線或逾時，交由內建字庫判斷
   }
 }
 
@@ -666,25 +882,26 @@ async function resolveSpellAttempt(p, family, word, purpose, usedHint){
     reason = '超時未作答';
   } else if(consecutiveRepeat){
     const remain = WORD_COOLDOWN_ROUNDS - (game.round - game.wordRounds[word]);
-    reason = '"'+word+'" 還在冷卻中，需再間隔 '+Math.max(remain,1)+' 回合才能重複使用';
+    reason = '這個字還在冷卻中，需再間隔 '+Math.max(remain,1)+' 回合才能重複使用';
   } else if(!isValidWord(family, word)){
-    reason = '"'+word+'" 不符合條件（必須是只含英文字母、包含「'+family+'」的單字）';
+    reason = '不符合條件（必須是只含英文字母、且包含「'+family+'」的單字）';
   } else if(!p.isHuman){
     ok = true; // 電腦玩家使用內建字庫，已確定為有效單字
+  } else if(KNOWN_WORDS.has(word)){
+    ok = true; // 本機常見字庫已收錄，直接判定為有效單字
   } else {
     const dictResult = await isRealWord(word);
     if(dictResult === false){
-      reason = '"'+word+'" 好像不是有效的英文單字，換一個試試';
+      reason = '字典查詢不到這個字，可能拼錯了';
     } else if(dictResult === null){
-      const knownFallback = Object.values(FAMILIES).some(fam=> fam.words.includes(word));
-      ok = knownFallback;
-      if(!ok) reason = '目前無法連線查字典，且這個字不在常見字庫中，請換一個常見單字試試';
+      reason = '目前無法連線查字典，且這個字不在常見字庫中';
     } else {
       ok = true;
     }
   }
   if(!ok){
-    log((p.isHuman?'你':p.name)+' 拼字挑戰失敗（'+reason+'）。', p.isHuman);
+    const wordDisplay = word ? '你拼的是「'+word+'」，' : '';
+    log((p.isHuman?'你':p.name)+' 拼字挑戰失敗。'+wordDisplay+reason+'。', p.isHuman);
     if(purpose==='move'){ render(); setTimeout(nextTurn, 600); }
     else if(purpose==='buy'){ log('沒有成功購買這塊地。', p.isHuman); render(); setTimeout(nextTurn,600); }
     else if(purpose==='upgrade'){ log('升級挑戰失敗。', p.isHuman); render(); setTimeout(nextTurn,600); }
@@ -856,7 +1073,10 @@ function payRent(p, family, rentOverride){
       log((p.isHuman?'你':p.name)+' 被迫變賣一塊地產抵債。', p.isHuman);
     } else {
       p.out = true;
-      log((p.isHuman?'你':p.name)+' 已經出局了！', p.isHuman);
+      log((p.isHuman?'你':p.name)+' 已經破產了！遊戲提前結束。', p.isHuman);
+      render();
+      setTimeout(()=> endGame('💥 '+(p.isHuman?'你':p.name)+' 破產了，遊戲提前結束！'), 700);
+      return;
     }
   }
   render();
@@ -900,13 +1120,14 @@ function scoreOf(p){
   return val;
 }
 
-function endGame(){
+function endGame(reasonMsg){
   game.gameOver = true;
   const ranked = [...game.players].sort((a,b)=> scoreOf(b)-scoreOf(a));
   const overlay = document.getElementById('overlay');
   overlay.style.display='flex';
   overlay.innerHTML = '<div class="card">'
     +'<h2>遊戲結束！</h2>'
+    +(reasonMsg ? '<p style="color:#C0392B;font-size:13px;font-weight:700;margin-bottom:8px;">'+reasonMsg+'</p>' : '')
     +'<p style="color:#7A7261;font-size:13px;margin-bottom:14px;">依代幣＋地產價值計算最終總分</p>'
     + ranked.map((p,i)=>'<div class="rank"><span><span class="dot" style="background:'+p.color+';display:inline-block;width:11px;height:11px;border-radius:50%;margin-right:6px;"></span>'+(i===0?'🏆 ':'')+p.name+(p.out?'（出局）':'')+'</span><span>'+scoreOf(p)+' 分</span></div>').join('')
     +'<button class="btn primary" id="playAgain" style="margin-top:16px;width:100%;">再玩一次</button>'
@@ -924,6 +1145,7 @@ function startGame(humanCount){
 }
 
 function showSetup(){
+  randomizeFamiliesAndBoard();
   initBoard();
   renderFamLegend();
   document.getElementById('playersList').innerHTML = '<p style="font-size:12px;color:#8A7F63;">請先選擇人數開始遊戲</p>';
@@ -949,16 +1171,60 @@ document.getElementById('helpBtn').onclick = ()=>{
   const el = document.getElementById('helpPanel');
   if(el.style.display==='none'){
     el.style.display='block';
-    el.innerHTML = '<b>玩法</b>：開始前先選擇 1–3 位人類玩家，人數不足時由電腦玩家補齊，共 3 人對戰（棋子顏色為藍、紅、綠）。'
-      +' 每回合抽到一個字母串（如 at），限時 45 秒內輸入一個「包含這個字母串」的英文單字即可，不限字首、字中或字尾，例如 at 可以是 fat（字尾）、attack（字首），也可以是 water（字中）。系統會連線字典確認是否為真正的英文單字，若沒有網路則改用內建常見字庫判斷。'
-      +' 拼字成功後要擲一顆六面骰子（1–6 點），骰到幾點就前進幾格！'
-      +' 同一個單字用過之後會進入冷卻，需要間隔 '+WORD_COOLDOWN_ROUNDS+' 個回合之後才能重複使用同一個字！'
-      +' 想不到單字時可以按「需要提示」，但這次只能前進 1 格，且每位玩家一場遊戲最多可使用 '+MAX_HINTS+' 次提示。'
-      +' 走到空地可以挑戰拼出「新單字」來買下地產；走到別人的地產要付過路費，也可以挑戰拼字來免租。'
-      +' 已被買下的地產格會顯示與該玩家棋子相同的顏色。'
-      +' 累積不同單字數量可以讓地產升級（小屋、大屋、飯店），過路費也會提高。'
-      +' 走到「前往複習關」會被送去休息一輪；走到「單字獎勵站」可以免費升級地產。'
-      +' 遊戲進行 '+ROUNDS+' 輪後，依代幣加地產價值計算總分，分數最高獲勝！';
+    el.innerHTML =
+        '<h4>🎯 遊戲目標</h4>'
+      + '<p style="margin:0;">輪流拼出英文單字前進，買下地產、升級賺過路費，'+ROUNDS+' 輪結束後代幣＋地產價值最高的人獲勝！</p>'
+
+      + '<h4>👥 開始設定</h4>'
+      + '<ul>'
+        + '<li>選擇 1–3 位人類玩家，人數不足由電腦補齊，固定 3 人對戰（棋子顏色：<b style="color:#2F80ED">藍</b>／<b style="color:#E03131">紅</b>／<b style="color:#2F9E44">綠</b>）。</li>'
+        + '<li>每次開新局，會從 16 組小學常用字根中隨機抽選 8 組上場，所以每一局出現的字母組合都不一樣。</li>'
+      + '</ul>'
+
+      + '<h4>🔄 每回合的流程</h4>'
+      + '<ol>'
+        + '<li>系統隨機抽出一個字母串（例如 <span class="tag">at</span>）。</li>'
+        + '<li>限時 45 秒，輸入一個「包含這個字母串」的英文單字（不限字首、字中、字尾都算，例如 at 可以是 fat、attack，也可以是 water）。</li>'
+        + '<li><b>先看拼字結果，再決定要不要擲骰子：</b>'
+          + '<ul>'
+            + '<li>✅ <b>拼對了</b>：擲一顆六面骰子（1–6 點），骰到幾點就前進幾格。</li>'
+            + '<li>❌ <b>拼錯或超時沒作答</b>：不擲骰子，直接停在原地不動，換下一位玩家。</li>'
+          + '</ul>'
+        + '</li>'
+        + '<li>移動後根據停留的格子觸發對應效果（詳見下方「特殊格效果」）。</li>'
+      + '</ol>'
+
+      + '<h4>✅ 單字怎麼算「拼對」</h4>'
+      + '<ul>'
+        + '<li>只要單字裡包含當回合的字母串就算數，不限位置（字首／字中／字尾皆可）。</li>'
+        + '<li>系統內建教育部國小 1200 必背單字等兩千多個常見字，離線就能立即判斷；只有極少數不在字庫的生僻字，才會嘗試連線字典查詢確認。</li>'
+        + '<li>同一個單字用過之後會進入冷卻，需要間隔 '+WORD_COOLDOWN_ROUNDS+' 個回合後才能再次使用。</li>'
+        + '<li>想不到單字時可以按「需要提示」，但這次不擲骰子、固定只前進 1 格，且每位玩家一場遊戲最多可使用 '+MAX_HINTS+' 次提示。</li>'
+      + '</ul>'
+
+      + '<h4>🏠 地產：購買、升級、過路費</h4>'
+      + '<ul>'
+        + '<li><b>走到空地</b>：可以挑戰拼字買下地產（拼錯就不會買到，維持空地）。</li>'
+        + '<li><b>走到自己的地產</b>：可以挑戰拼字升級（小屋→大屋→飯店），累積使用過的不同單字數量越多，等級越高，過路費也越高。</li>'
+        + '<li><b>走到別人的地產</b>：需要支付過路費，也可以選擇挑戰拼字，拼對就免付租金。</li>'
+        + '<li>已被買下的地產格會顯示與該玩家棋子相同的顏色，方便一眼辨認。</li>'
+      + '</ul>'
+
+      + '<h4>🎲 各特殊格效果</h4>'
+      + '<ul>'
+        + '<li><b>出發 GO</b>：只要走過或停在出發點，就能獲得 2 枚代幣獎勵。</li>'
+        + '<li><b>複習關</b>：純粹休息一下，沒有任何懲罰或獎勵，直接換下一位玩家。</li>'
+        + '<li><b>前往複習關</b>：會被直接送到複習關格，並且下一輪暫停一次，不能行動。</li>'
+        + '<li><b>單字獎勵站</b>：若已擁有地產，隨機挑一塊免費升級（單字數 +3）；若還沒有地產，改為獲得 3 枚代幣。</li>'
+        + '<li><b>拼讀挑戰卡</b>：隨機抽到一種效果——聽音辨字（+1 幣）、造句小挑戰（前進 1 格）、快問快答（+1 幣）、反義詞挑戰（前進 2 格）、複習加分（+2 幣）。</li>'
+        + '<li><b>字彙寶箱卡</b>：隨機抽到一種效果——單字量進步獎（+2 幣）、幸運字卡（隨機一塊地產免費升級，沒有地產則改領 +2 幣）、小老師加分（+1 幣）、拼讀失誤（被送回複習關並暫停一輪）、詞彙大挑戰（+3 幣）。</li>'
+      + '</ul>'
+
+      + '<h4>🏆 遊戲結束與計分</h4>'
+      + '<ul>'
+        + '<li>進行 '+ROUNDS+' 輪後遊戲結束，依「代幣＋地產價值」計算總分，分數最高的玩家獲勝！</li>'
+        + '<li><b style="color:#C0392B;">只要有任何一位玩家破產（代幣付不出過路費，且名下也沒有地產可變賣），遊戲會立刻提前結束</b>，直接依當下代幣＋地產價值計算名次。</li>'
+      + '</ul>';
   } else {
     el.style.display='none';
   }
