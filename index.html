@@ -63,6 +63,8 @@ h1,h2,h3{font-family:'Baloo 2','Noto Sans TC',sans-serif; margin:0;}
 .btn:active{transform:translateY(2px);box-shadow:0 1px 0 var(--teal-dark);}
 .btn.primary{background:var(--teal);color:#fff;}
 .btn.primary:hover{background:var(--teal-dark);}
+.btn.gold{background:#E6A817;color:#fff;box-shadow:0 3px 0 #B9860F;}
+.btn.gold:hover{background:#CC9412;}
 .btn.gold{background:var(--gold);border-color:#A8721E;box-shadow:0 3px 0 #A8721E;color:#3A2708;}
 .btn.gold:active{box-shadow:0 1px 0 #A8721E;}
 .btn:disabled{opacity:.45;cursor:not-allowed;box-shadow:none;transform:none;}
@@ -524,13 +526,18 @@ function hexToRgba(hex, alpha){
 
 const PLAYER_COLORS = ['#2F80ED','#E03131','#2F9E44'];
 const BOT_NAMES = ['小霸','積木王','拼讀高手'];
-const MAX_HINTS = 10;
 const ROUNDS = 15;
 const WORD_COOLDOWN_ROUNDS = 5;
 const BOSS_ROUND_INTERVAL = 5;
 
 const DIFFICULTY_CHANCES = { easy:0.60, medium:0.75, hard:0.90 };
 const DIFFICULTY_LABELS = { easy:'簡單', medium:'普通', hard:'困難' };
+// 提示規則依難度而不同：max=總提示次數，fullWordCount=其中前幾次會直接顯示完整單字（其餘只顯示第一個字母）
+const HINT_CONFIG = {
+  easy:   { max:5, fullWordCount:5 },
+  medium: { max:5, fullWordCount:2 },
+  hard:   { max:3, fullWordCount:0 },
+};
 
 // 稀有字：場上第一位拼出的人可獲得額外獎勵，每個字全場限拿一次
 const RARE_WORDS = new Set(['elephant','computer','beautiful','dictionary','different','important','wonderful','interesting','university','helicopter','umbrella','pineapple','watermelon','breakfast','strawberry','handkerchief']);
@@ -554,9 +561,42 @@ const ACHIEVEMENT_LABELS = [
   {key:'tycoon', label:'🏆 地產大亨'},
   {key:'combo5', label:'🏆 神來一筆'},
   {key:'nevergiveup', label:'🏆 不放棄'},
+  {key:'streak10', label:'🔥 連續10次答對'},
+  {key:'rich50', label:'💰 存到50元'},
+  {key:'words100', label:'📖 拼出100字'},
+  {key:'bigmove', label:'⚡ 一回合走12步'},
+  {key:'noHints', label:'🎓 不用提示通關'},
+  {key:'bossKiller', label:'👑 Boss Killer'},
+  {key:'onefamily', label:'🌈 家族收藏達人'},
+  {key:'allfamilies', label:'🌈 全家族收藏'},
+  {key:'earlybuyer', label:'🚀 五回合內買三塊地'},
+  {key:'bigrent', label:'💎 收到10元以上租金'},
 ];
 
+// AI 人格：不同的電腦玩家個性，影響拼字成功率與購買/升級決策傾向
+const AI_PERSONALITIES = {
+  scholar:   {label:'🤓 學霸',   successBonus:0.15, buyChance:0.30, upgradeChance:0.60, rentChallengeChance:0.40},
+  merchant:  {label:'💰 商人',   successBonus:0,    buyChance:1.00, upgradeChance:0.60, rentChallengeChance:0.40},
+  trickster: {label:'😈 搗蛋鬼', successBonus:0,    buyChance:0.85, upgradeChance:0.90, rentChallengeChance:0.70},
+  tycoonAI:  {label:'🏰 地產王', successBonus:0,    buyChance:0.85, upgradeChance:1.00, rentChallengeChance:0.40},
+  turtle:    {label:'🐢 烏龜',   successBonus:0,    buyChance:0.85, upgradeChance:0.60, rentChallengeChance:0.40, lateGameBonus:true},
+};
+const PERSONALITY_KEYS = Object.keys(AI_PERSONALITIES);
+
+// 每局天氣／校園事件：開局隨機挑 3 個非 Boss 回合套用
+const EVENT_TYPES = {
+  rain:      {label:'🌧 下雨',   desc:'全體移動 -1 步'},
+  sunny:     {label:'☀️ 晴天',   desc:'全體移動 +1 步'},
+  schoolday: {label:'📚 校慶',   desc:'學校地產能力 ×2'},
+};
+const EVENT_CANDIDATE_ROUNDS = [3,4,6,7,8,9,11,12,13,14];
+
 function rollDice(){ return Math.floor(Math.random()*6)+1; }
+function timeLimitForRound(round){
+  if(round<=5) return 45000;
+  if(round<=10) return 35000;
+  return 25000;
+}
 function costForWord(w){ return w.length<=4 ? 2 : 3; }
 function wordOnCooldown(word){
   const usedRound = game.wordRounds[word];
@@ -591,14 +631,52 @@ function ownsAbility(p, abilityKey){
     return BOARD[idx] && BOARD[idx].ability===abilityKey;
   });
 }
+// 依地產等級（小屋1/大屋2/飯店3，尚未達小屋門檻也算1）回傳能力倍率；沒有該能力回傳0
+function abilityMultiplier(p, abilityKey){
+  let best = 0;
+  Object.keys(p.owned).forEach(k=>{
+    const idx = parseInt(k.split(':')[1],10);
+    if(BOARD[idx] && BOARD[idx].ability===abilityKey){
+      const lvl = Math.max(1, levelIndex(p.owned[k]));
+      if(lvl>best) best = lvl;
+    }
+  });
+  return best;
+}
 function effectiveMaxHints(p){
-  return MAX_HINTS + (ownsAbility(p,'library') ? 1 : 0);
+  const base = (HINT_CONFIG[game.aiDifficulty] || HINT_CONFIG.medium).max;
+  return base + (ownsAbility(p,'library') ? 1 : 0);
 }
 function awardAchievement(p, key, label){
   if(!p.achievements) p.achievements = new Set();
   if(!p.achievements.has(key)){
     p.achievements.add(key);
     log('🏅 '+(p.isHuman?'你':p.name)+' 解鎖成就：'+label+'！', p.isHuman);
+  }
+}
+function checkMoneyAchievements(p){
+  if(p.money>=50) awardAchievement(p,'rich50','存到50元：代幣累積達到 50 枚');
+}
+function tryLetterFusion(p, family, word){
+  const fusionFamily = FAMILY_KEYS.find(fk=> fk!==family && word.includes(fk) && Object.keys(p.owned).some(k=>k.startsWith(fk+':')));
+  if(!fusionFamily) return null;
+  const fKeys = Object.keys(p.owned).filter(k=>k.startsWith(fusionFamily+':'));
+  const fk = fKeys[Math.floor(Math.random()*fKeys.length)];
+  p.owned[fk] += 1;
+  log('🧬 字母融合！「'+word+'」同時包含「'+family+'」和「'+fusionFamily+'」，額外升級了一塊 '+FAMILIES[fusionFamily].label+' 家族地產！', p.isHuman);
+  return fusionFamily;
+}
+
+function checkFamilyAlbum(p, family, word){
+  if(!p.familyProgress[family]) p.familyProgress[family] = new Set();
+  p.familyProgress[family].add(word);
+  const total = FAMILIES[family].words.length;
+  if(p.familyProgress[family].size>=total && !p.familyMastered.has(family)){
+    p.familyMastered.add(family);
+    p.permanentDiceBonus = (p.permanentDiceBonus||0) + 1;
+    log('🌈 '+(p.isHuman?'你':p.name)+' 集滿「'+family+'」家族的收藏冊！獲得永久 +1 骰子點數！', p.isHuman);
+    awardAchievement(p,'onefamily','家族收藏達人：集滿一個字根家族的收藏冊');
+    if(p.familyMastered.size>=FAMILY_KEYS.length) awardAchievement(p,'allfamilies','全家族收藏：集滿全部 8 個字根家族');
   }
 }
 
@@ -610,13 +688,22 @@ function freshGame(humanCount, aiDifficulty){
   for(let i=0;i<3;i++){
     const isHuman = i < humanCount;
     const name = isHuman ? (humanCount===1 ? '你' : ('玩家'+(i+1))) : BOT_NAMES[botIdx++];
+    const personality = isHuman ? null : PERSONALITY_KEYS[Math.floor(Math.random()*PERSONALITY_KEYS.length)];
     players.push({
-      id:i,name,isHuman,color:PLAYER_COLORS[i],pos:0,money:10,owned:{},wordCount:{},
+      id:i,name,isHuman,personality,color:PLAYER_COLORS[i],pos:0,money:10,owned:{},wordCount:{},
       skip:false,out:false,turns:0,hintsUsed:0,
-      combo:0, failStreak:0, collection:new Set(), collectionBonusGiven:false,
-      achievements:new Set(), lastFamily:null,
+      combo:0, failStreak:0, streakCounter:0, collection:new Set(), collectionBonusGiven:false,
+      achievements:new Set(), lastFamily:null, familyRepeatCount:1,
+      familyProgress:{}, familyMastered:new Set(), permanentDiceBonus:0,
+      luckyDiceUsed:false, buysInFirst5:0, bossWins:0,
     });
   }
+  // 隨機挑 3 個非 Boss 回合套用天氣／校園事件
+  const candidates = EVENT_CANDIDATE_ROUNDS.slice();
+  for(let i=candidates.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [candidates[i],candidates[j]]=[candidates[j],candidates[i]]; }
+  const eventKeys = Object.keys(EVENT_TYPES);
+  const roundEvents = {};
+  candidates.slice(0,3).forEach((r,i)=>{ roundEvents[r] = eventKeys[i % eventKeys.length]; });
   return {
     players,
     round: 1,
@@ -627,6 +714,11 @@ function freshGame(humanCount, aiDifficulty){
     gameOver:false,
     aiDifficulty: aiDifficulty || 'medium',
     rareWordsUsed: new Set(),
+    bossPropertySlot: null,
+    bossPropertyBonus: {},
+    roundEvents,
+    activeEvent: null,
+    finalBossDone: false,
   };
 }
 
@@ -697,9 +789,10 @@ function renderPlayers(){
     const famCount = Object.keys(p.owned).length;
     const collSize = p.collection ? p.collection.size : 0;
     const achCount = p.achievements ? p.achievements.size : 0;
+    const pers = !p.isHuman && p.personality ? AI_PERSONALITIES[p.personality] : null;
     return '<div class="player-row'+(p.out?' dead':'')+'">'
       +'<span class="pdot" style="background:'+p.color+'"></span>'
-      +'<span class="pname">'+p.name+(p.out?'（出局）':'')+'</span>'
+      +'<span class="pname">'+p.name+(pers?' <span style="font-weight:400;font-size:10px;color:#8A7F63;">'+pers.label+'</span>':'')+(p.out?'（出局）':'')+'</span>'
       +'<span style="color:#8A7F63;font-size:10.5px;">地產'+famCount+'・📖'+collSize+'・🏅'+achCount+(p.combo>=2?'・🔥x'+p.combo:'')+'</span>'
       +'<span class="pmoney">'+p.money+' 幣</span>'
       +'</div>';
@@ -712,22 +805,32 @@ function renderBoardState(){
     const el = board.querySelector('[data-idx="'+i+'"]');
     const def = BOARD[i];
     const lvlEl = el.querySelector('.lvl');
+    let crownEl = el.querySelector('.crown-icon');
     el.style.background = '';
     el.style.borderColor = '';
     el.style.borderWidth = '';
+    if(crownEl) crownEl.remove();
     if(def.type==='property'){
       const slot = i;
       const owner = ownerOf(def.family, slot);
       const key = def.family+':'+slot;
       if(owner){
         const li = levelIndex(owner.owned[key]);
-        lvlEl.textContent = LEVELS[li].name;
+        lvlEl.textContent = LEVELS[li].name + (game.bossPropertyBonus[key] ? ' 👑' : '');
         lvlEl.style.color = owner.color;
         el.style.borderColor = owner.color;
         el.style.borderWidth = '3px';
         el.style.background = hexToRgba(owner.color, 0.16);
       } else if(lvlEl){
         lvlEl.textContent='';
+      }
+      if(game.bossPropertySlot===slot && !owner){
+        const c = document.createElement('div');
+        c.className = 'crown-icon';
+        c.textContent = '👑';
+        c.title = '超級地產：拼對可直接免費奪得永久五星地產！';
+        c.style.cssText = 'position:absolute;top:2px;left:3px;font-size:11px;z-index:2;';
+        el.appendChild(c);
       }
     }
   }
@@ -826,12 +929,40 @@ function startTurn(){
     return;
   }
   if(p.isHuman){
-    render('<button class="btn primary" id="spinBtn" style="width:100%;">🔤 抽字母串，拼字前進</button>');
+    render('<button class="btn primary" id="spinBtn" style="width:100%;">🔤 抽字母串，拼字前進</button>'
+      + (!p.luckyDiceUsed ? '<button class="btn gold" id="luckyBtn" style="width:100%;margin-top:6px;">🎲 使用幸運骰（本場僅1次，自選步數）</button>' : ''));
     document.getElementById('spinBtn').onclick = ()=> beginSpellChallenge('move');
+    const luckyBtn = document.getElementById('luckyBtn');
+    if(luckyBtn) luckyBtn.onclick = ()=> showLuckyDicePicker(p);
   } else {
+    if(!p.luckyDiceUsed && Math.random()<0.15){
+      p.luckyDiceUsed = true;
+      const n = Math.floor(Math.random()*6)+1;
+      log(p.name+' 使用了幸運骰，直接前進 '+n+' 步！', p.isHuman);
+      render();
+      setTimeout(()=> movePlayer(p, n), 600);
+      return;
+    }
     render();
     setTimeout(()=> beginSpellChallenge('move'), 700);
   }
+}
+
+function showLuckyDicePicker(p){
+  render('<div style="font-size:13px;font-weight:700;margin-bottom:8px;">🎲 幸運骰：選擇要直接前進的步數（本場只能用一次）</div>'
+    +'<div class="choice-row" style="flex-wrap:wrap;gap:6px;">'
+      + [1,2,3,4,5,6].map(n=>'<button class="btn primary small" data-n="'+n+'" style="min-width:40px;">'+n+'</button>').join('')
+    +'</div>'
+    +'<button class="btn small" id="luckyCancel" style="margin-top:8px;">取消</button>');
+  document.querySelectorAll('[data-n]').forEach(btn=>{
+    btn.onclick = ()=>{
+      const n = parseInt(btn.dataset.n,10);
+      p.luckyDiceUsed = true;
+      log('你使用了幸運骰，直接前進 '+n+' 步！', true);
+      movePlayer(p, n);
+    };
+  });
+  document.getElementById('luckyCancel').onclick = ()=> startTurn();
 }
 
 function nextTurn(){
@@ -839,9 +970,21 @@ function nextTurn(){
   game.turnIdx = (game.turnIdx+1) % game.players.length;
   let enteredNewRound = false;
   if(game.turnIdx===0){ game.round++; enteredNewRound = true; }
+  if(enteredNewRound) game.activeEvent = game.roundEvents[game.round] || null;
+  if(enteredNewRound && game.activeEvent){
+    const ev = EVENT_TYPES[game.activeEvent];
+    log('📅 第 '+game.round+' 輪事件：'+ev.label+'！'+ev.desc, true);
+  }
   const anyActive = game.players.some(p=>!p.out);
   const allDone = game.players.every(p=> p.out || p.turns>=ROUNDS);
-  if(!anyActive || allDone){ endGame(); return; }
+  if(!anyActive || allDone){
+    if(anyActive && !game.finalBossDone){
+      game.finalBossDone = true;
+      setTimeout(runFinalBoss, 300);
+      return;
+    }
+    endGame(); return;
+  }
   if(enteredNewRound && game.round<=ROUNDS && game.round % BOSS_ROUND_INTERVAL === 0){
     setTimeout(runBossRound, 300);
     return;
@@ -851,6 +994,13 @@ function nextTurn(){
 
 let bossCallback = null;
 function runBossRound(){
+  // 每次 Boss Round 也重新指定一塊「超級地產」（若尚未被奪走）
+  const propertyIndices = BOARD.map((d,i)=> d.type==='property' ? i : -1).filter(i=> i>=0 && !ownerOf(BOARD[i].family,i));
+  if(propertyIndices.length){
+    game.bossPropertySlot = propertyIndices[Math.floor(Math.random()*propertyIndices.length)];
+    const slotDef = BOARD[game.bossPropertySlot];
+    log('👑 本輪的超級地產出現在「'+FAMILIES[slotDef.family].label+' 家族 '+slotDef.label.split(' ').pop()+'」，拼對就能直接奪得永久五星地產！', true);
+  }
   const family = FAMILY_KEYS[Math.floor(Math.random()*FAMILY_KEYS.length)];
   log('👑 Boss Round！全員挑戰「'+FAMILIES[family].label+'」家族的單字，成功的前三名依序獲得 5／3／1 枚代幣！', true);
   render();
@@ -869,7 +1019,12 @@ function runBossRound(){
     const rewards = [5,3,1];
     winners.forEach((r,i)=>{
       const bonus = rewards[i];
-      if(bonus){ r.p.money += bonus; log((r.p.isHuman?'你':r.p.name)+' 在 Boss Round 拿下第 '+(i+1)+' 名，獲得 '+bonus+' 枚代幣！', r.p.isHuman); }
+      if(bonus){
+        r.p.money += bonus;
+        r.p.bossWins = (r.p.bossWins||0)+1;
+        log((r.p.isHuman?'你':r.p.name)+' 在 Boss Round 拿下第 '+(i+1)+' 名，獲得 '+bonus+' 枚代幣！', r.p.isHuman);
+        checkMoneyAchievements(r.p);
+      }
     });
     if(winners.length===0) log('這次 Boss Round 沒有人成功拼對，殘念！', true);
     render();
@@ -886,6 +1041,91 @@ function bossAttempt(p, family, callback){
   }
 }
 
+// ── 最終 BOSS（第 15 輪結束前的收尾挑戰）──
+let finalBossCallback = null;
+function runFinalBoss(){
+  const shuffled = FAMILY_KEYS.slice();
+  for(let i=shuffled.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [shuffled[i],shuffled[j]]=[shuffled[j],shuffled[i]]; }
+  const chosen = shuffled.slice(0,3);
+  log('🔥 最終 BOSS 挑戰！請拼出一個同時包含至少兩個字根的單字：'+chosen.join('、')+'！成功可獲得 +20 分！', true);
+  render();
+  const order = game.players.slice();
+  let idx = 0;
+  function next(){
+    if(idx>=order.length){ finish(); return; }
+    const p = order[idx];
+    idx++;
+    log((p.isHuman?'你':p.name)+' 的最終 BOSS 挑戰！', p.isHuman);
+    finalBossAttempt(p, chosen, ()=> setTimeout(next, 300));
+  }
+  function finish(){ render(); setTimeout(()=> endGame(), 900); }
+  setTimeout(next, 400);
+}
+function finalBossAttempt(p, families, callback){
+  finalBossCallback = callback;
+  if(!p.isHuman){
+    setTimeout(()=>{
+      const chance = (DIFFICULTY_CHANCES[game.aiDifficulty]||0.75) * 0.7;
+      const success = Math.random() < chance;
+      if(success){
+        p.money += 20;
+        p.bossWins = (p.bossWins||0)+1;
+        log((p.isHuman?'你':p.name)+' 完成最終 BOSS 挑戰！獲得 +20 分！', p.isHuman);
+      } else {
+        log(p.name+' 沒能完成最終 BOSS 挑戰。', p.isHuman);
+      }
+      render();
+      const cb = finalBossCallback; finalBossCallback = null;
+      if(typeof cb==='function') cb();
+    }, 700);
+    return;
+  }
+  let timeLeft = 30000;
+  const startHtml = '<div style="font-size:13px;font-weight:700;margin-bottom:4px;">🔥 最終 BOSS：拼出同時包含至少兩個字根的單字（'+families.join('、')+'）</div>'
+    +'<div class="timerbar" style="margin-top:6px;"><div id="timerFill"></div></div>'
+    +'<div class="spell-row" style="margin-top:8px;"><input type="text" id="spellInput" placeholder="輸入單字" autocomplete="off"><button class="btn primary small" id="submitSpell">送出</button></div>';
+  render(startHtml);
+  const input = document.getElementById('spellInput');
+  input.focus();
+  let submitted = false;
+  const submit = async ()=>{
+    if(submitted) return;
+    submitted = true;
+    clearInterval(timerInt);
+    const val = (input.value||'').trim().toLowerCase();
+    document.getElementById('submitSpell').disabled = true;
+    input.disabled = true;
+    const matchCount = families.filter(fam=> val.includes(fam)).length;
+    let ok = false;
+    if(matchCount>=2 && /^[a-z]+$/.test(val) && val.length>=3){
+      if(KNOWN_WORDS.has(val)) ok = true;
+      else {
+        const r = await isRealWord(val);
+        ok = (r===true);
+      }
+    }
+    if(ok){
+      p.money += 20;
+      p.bossWins = (p.bossWins||0)+1;
+      log('你完成最終 BOSS 挑戰，拼出 "'+val+'"！獲得 +20 分！', true);
+    } else {
+      log('最終 BOSS 挑戰失敗（需同時包含至少兩個字根：'+families.join('、')+'）。', true);
+    }
+    render();
+    const cb = finalBossCallback; finalBossCallback = null;
+    if(typeof cb==='function') cb();
+  };
+  document.getElementById('submitSpell').onclick = submit;
+  input.addEventListener('keydown', e=>{ if(e.key==='Enter') submit(); });
+  const fill = document.getElementById('timerFill');
+  const total = timeLeft;
+  timerInt = setInterval(()=>{
+    timeLeft -= 100;
+    if(fill) fill.style.width = Math.max(0,(timeLeft/total*100))+'%';
+    if(timeLeft<=0){ clearInterval(timerInt); submit(); }
+  }, 100);
+}
+
 let currentFamily = null;
 let timerInt = null;
 
@@ -898,6 +1138,9 @@ function beginSpellChallenge(purpose, forcedFamily){
   if(purpose==='move'){
     log(p.name+' 抽到了 '+f.label+' 家族！', p.isHuman);
     p._prevFamilyForChain = p.lastFamily;
+    if(family === p.lastFamily){ p.familyRepeatCount = (p.familyRepeatCount||1) + 1; }
+    else { p.familyRepeatCount = 1; }
+    p._familyRepeatAtDraw = p.familyRepeatCount;
     p.lastFamily = family;
   }
 
@@ -907,7 +1150,8 @@ function beginSpellChallenge(purpose, forcedFamily){
   }
 
   const maxHints = effectiveMaxHints(p);
-  let timeLeft = 45000;
+  const hintCfg = HINT_CONFIG[game.aiDifficulty] || HINT_CONFIG.medium;
+  let timeLeft = timeLimitForRound(game.round);
   const startHtml =
     famChip(family)
     +'<div class="timerbar" style="margin-top:6px;"><div id="timerFill"></div></div>'
@@ -921,18 +1165,24 @@ function beginSpellChallenge(purpose, forcedFamily){
   const input = document.getElementById('spellInput');
   input.focus();
   let usedHint = false;
+  let submitted = false;
   document.getElementById('hintBtn').onclick = ()=>{
     if(p.hintsUsed >= maxHints) return;
     p.hintsUsed++;
     const avail = f.words.filter(w=> !wordOnCooldown(w));
     const w = avail[Math.floor(Math.random()*avail.length)] || f.words[0];
-    document.getElementById('hintLine').textContent = '提示：試著想一個含有「'+f.label+'」且以「'+w[0].toUpperCase()+'」開頭的單字！（本場還可以用 '+(maxHints-p.hintsUsed)+' 次）';
+    const showFullWord = p.hintsUsed <= hintCfg.fullWordCount;
+    document.getElementById('hintLine').textContent = showFullWord
+      ? '提示單字：'+w+'（本場還可以用 '+(maxHints-p.hintsUsed)+' 次）'
+      : '提示：試著想一個含有「'+f.label+'」且以「'+w[0].toUpperCase()+'」開頭的單字！（本場還可以用 '+(maxHints-p.hintsUsed)+' 次）';
     const hb = document.getElementById('hintBtn');
     hb.textContent = '需要提示（剩 '+(maxHints-p.hintsUsed)+' 次）';
     if(p.hintsUsed>=maxHints) hb.disabled = true;
     usedHint = true;
   };
   const submit = async ()=>{
+    if(submitted) return;
+    submitted = true;
     clearInterval(timerInt);
     const val = input.value.trim().toLowerCase();
     const btn = document.getElementById('submitSpell');
@@ -952,7 +1202,7 @@ function beginSpellChallenge(purpose, forcedFamily){
     if(fill) fill.style.width = Math.max(0,(timeLeft/total*100))+'%';
     if(timeLeft<=0){
       clearInterval(timerInt);
-      resolveSpellAttempt(p, family, '', purpose, usedHint);
+      submit();
     }
   }, 100);
 }
@@ -984,7 +1234,16 @@ async function isRealWord(word){
 
 function botAttempt(p, family, purpose){
   const f = FAMILIES[family];
-  const successChance = DIFFICULTY_CHANCES[game.aiDifficulty] || 0.75;
+  let successChance = DIFFICULTY_CHANCES[game.aiDifficulty] || 0.75;
+  const pers = AI_PERSONALITIES[p.personality];
+  if(pers){
+    successChance += (pers.successBonus||0);
+    if(pers.lateGameBonus){
+      if(game.round<=5) successChance -= 0.15;
+      else if(game.round>=11) successChance += 0.15;
+    }
+  }
+  successChance = Math.min(0.97, Math.max(0.25, successChance));
   const success = Math.random() < successChance;
   let word = '';
   if(success){
@@ -1030,6 +1289,7 @@ async function resolveSpellAttempt(p, family, word, purpose, usedHint){
       if(example) teachTip = '　💡 小提示：像「'+example+'」這樣包含「'+family+'」的字就符合條件喔！';
     }
     p.combo = 0;
+    p.streakCounter = 0;
     p.failStreak = (p.failStreak||0) + 1;
     const wordDisplay = word ? '你拼的是「'+word+'」，' : '';
     log((p.isHuman?'你':p.name)+' 拼字挑戰失敗。'+wordDisplay+reason+'。'+teachTip, p.isHuman);
@@ -1037,7 +1297,8 @@ async function resolveSpellAttempt(p, family, word, purpose, usedHint){
     else if(purpose==='buy'){ log('沒有成功購買這塊地。', p.isHuman); render(); setTimeout(nextTurn,600); }
     else if(purpose==='upgrade'){ log('升級挑戰失敗。', p.isHuman); render(); setTimeout(nextTurn,600); }
     else if(purpose==='rent'){ payRent(p, family); }
-    else if(purpose==='boss'){ render(); const cb=bossCallback; bossCallback=null; setTimeout(()=>cb(false), 500); }
+    else if(purpose==='boss'){ render(); const cb=bossCallback; bossCallback=null; setTimeout(()=>{ if(typeof cb==='function') cb(false); }, 500); }
+    else if(purpose==='bossProperty'){ log('超級地產挑戰失敗，這塊地仍然開放給其他人挑戰。', p.isHuman); render(); setTimeout(nextTurn,600); }
     return;
   }
 
@@ -1045,6 +1306,8 @@ async function resolveSpellAttempt(p, family, word, purpose, usedHint){
 
   // ── Combo 連續答對系統 ──
   p.combo = (p.combo||0) + 1;
+  p.streakCounter = (p.streakCounter||0) + 1;
+  if(p.streakCounter>=10) awardAchievement(p,'streak10','連續10次答對：不間斷連續拼字成功 10 次');
   let comboStepBonus = 0;
   if(p.combo===2){ comboStepBonus=1; log('🔥 Combo x2！這次移動額外 +1 步！', p.isHuman); }
   else if(p.combo===3){ comboStepBonus=2; log('🔥🔥 Combo x3！這次移動額外 +2 步！', p.isHuman); }
@@ -1059,6 +1322,17 @@ async function resolveSpellAttempt(p, family, word, purpose, usedHint){
   if((p.failStreak||0)>=5) awardAchievement(p,'nevergiveup','不放棄：連續失敗 5 次後成功拼對');
   p.failStreak = 0;
 
+  // ── 家族連擊（連續兩／三回合抽到同一家族）──
+  const familyRepeat = p._familyRepeatAtDraw || 1;
+  if(purpose==='move' && !usedHint && familyRepeat===2){
+    p.money += 2;
+    log('👯 家族連擊 x2！連續抽到「'+family+'」家族，額外獲得 2 枚代幣！', p.isHuman);
+  } else if(purpose==='move' && !usedHint && familyRepeat>=3){
+    const keys = Object.keys(p.owned);
+    if(keys.length){ const k=keys[Math.floor(Math.random()*keys.length)]; p.owned[k]+=3; log('👯👯 家族連擊 x3！連續三次抽到「'+family+'」家族，隨機一塊地產免費升級！', p.isHuman); }
+    p.familyRepeatCount = 0;
+  }
+
   // ── 單字收藏冊 ──
   const isNewWord = !p.collection.has(word);
   p.collection.add(word);
@@ -1068,7 +1342,11 @@ async function resolveSpellAttempt(p, family, word, purpose, usedHint){
     log('📖 '+(p.isHuman?'你':p.name)+' 的單字收藏冊集滿 20 個不同單字，獲得寶箱獎勵 +5 枚代幣！', p.isHuman);
   }
   if(p.collection.size>=30) awardAchievement(p,'wordking','拼字王：累積拼對 30 個不同單字');
+  if(p.collection.size>=100) awardAchievement(p,'words100','拼出100字：累積拼對 100 個不同單字');
   if(word.length>=10) awardAchievement(p,'longword','長字高手：拼出 10 個字母以上的單字');
+
+  // ── 字母串家族收藏冊（單一家族收藏完成）──
+  checkFamilyAlbum(p, family, word);
 
   // ── 稀有字獎勵（全場限一次）──
   if(RARE_WORDS.has(word) && !game.rareWordsUsed.has(word)){
@@ -1076,6 +1354,8 @@ async function resolveSpellAttempt(p, family, word, purpose, usedHint){
     p.money += 5;
     log('💎 '+(p.isHuman?'你':p.name)+' 全場第一個拼出稀有字 "'+word+'"，額外獲得 5 枚代幣！', p.isHuman);
   }
+
+  checkMoneyAchievements(p);
 
   if(purpose==='move'){
     let steps, diceMsg;
@@ -1093,7 +1373,14 @@ async function resolveSpellAttempt(p, family, word, purpose, usedHint){
       steps += 2;
       bonusParts.push('⛓️ 字母連鎖(同時含 '+p._prevFamilyForChain+'+'+family+') +2');
     }
-    if(!usedHint && ownsAbility(p,'lighthouse')){ steps += 1; bonusParts.push('🗼 燈塔 +1'); }
+    if(!usedHint){
+      const lhMult = abilityMultiplier(p,'lighthouse');
+      if(lhMult>0){ steps += lhMult; bonusParts.push('🗼 燈塔 +'+lhMult); }
+      if(p.permanentDiceBonus){ steps += p.permanentDiceBonus; bonusParts.push('🌈 收藏加成 +'+p.permanentDiceBonus); }
+      if(game.activeEvent==='rain'){ steps = Math.max(1, steps-1); bonusParts.push('🌧 下雨 -1'); }
+      else if(game.activeEvent==='sunny'){ steps += 1; bonusParts.push('☀️ 晴天 +1'); }
+    }
+    if(steps>=12) awardAchievement(p,'bigmove','一回合走12步：單次移動達到 12 步以上');
     const bonusText = bonusParts.length ? '（'+bonusParts.join('，')+'）' : '';
     log((p.isHuman?'你':p.name)+' 成功拼出 "'+word+'"！'+diceMsg+'，前進 '+steps+' 格。'+bonusText, p.isHuman);
     movePlayer(p, steps);
@@ -1108,8 +1395,15 @@ async function resolveSpellAttempt(p, family, word, purpose, usedHint){
     p.owned[propKey] = (p.owned[propKey]||0) + 1;
     const li = levelIndex(p.owned[propKey]);
     let bonusMsg = '';
-    if(BOARD[slot] && BOARD[slot].ability==='school'){ p.money += 1; bonusMsg = '（🏫 學校地產額外 +1 幣！）'; }
+    if(BOARD[slot] && BOARD[slot].ability==='school'){
+      let bonus = Math.max(1, li);
+      if(game.activeEvent==='schoolday') bonus *= 2;
+      p.money += bonus;
+      bonusMsg = '（🏫 學校地產額外 +'+bonus+' 幣'+(game.activeEvent==='schoolday'?'，校慶加倍！':'')+'）';
+    }
     log((p.isHuman?'你':p.name)+' 用單字 "'+word+'" 升級了地產，目前等級：'+LEVELS[li].name+'！'+bonusMsg, p.isHuman);
+    tryLetterFusion(p, family, word);
+    checkMoneyAchievements(p);
     render(); setTimeout(nextTurn,700);
   } else if(purpose==='rent'){
     log((p.isHuman?'你':p.name)+' 用單字 "'+word+'" 成功免除了過路費！', p.isHuman);
@@ -1118,7 +1412,17 @@ async function resolveSpellAttempt(p, family, word, purpose, usedHint){
     log((p.isHuman?'你':p.name)+' 在 Boss Round 中成功拼出 "'+word+'"！', p.isHuman);
     render();
     const cb = bossCallback; bossCallback = null;
-    setTimeout(()=> cb(true), 500);
+    setTimeout(()=>{ if(typeof cb==='function') cb(true); }, 500);
+  } else if(purpose==='bossProperty'){
+    const slot = p._pendingSlot;
+    const propKey = family+':'+slot;
+    p.owned[propKey] = 999; // 直接鎖定最高等級
+    game.bossPropertyBonus[propKey] = 5;
+    if(game.bossPropertySlot===slot) game.bossPropertySlot = null;
+    p.bossWins = (p.bossWins||0)+1;
+    log('👑 '+(p.isHuman?'你':p.name)+' 用單字 "'+word+'" 拼對了超級地產挑戰，直接奪得永久五星地產（過路費 +5）！', p.isHuman);
+    awardAchievement(p,'bossKiller','Boss Killer：奪得一塊超級地產');
+    render(); setTimeout(nextTurn,700);
   }
 }
 
@@ -1133,7 +1437,9 @@ function offerPurchase(p, family, word, cost){
     document.getElementById('confirmBuy').onclick = ()=> confirmPurchase(p, family, word, cost);
     document.getElementById('skipBuy').onclick = ()=> { log('你拼對了，但選擇先不買這塊地。', p.isHuman); render(); setTimeout(nextTurn,500); };
   } else {
-    const wantsBuy = p.money >= cost && Math.random() < 0.85;
+    const pers = AI_PERSONALITIES[p.personality];
+    const buyChance = pers ? pers.buyChance : 0.85;
+    const wantsBuy = p.money >= cost && Math.random() < buyChance;
     if(wantsBuy) confirmPurchase(p, family, word, cost);
     else { log(p.name+' 拼對了，但選擇先不買這塊地。'); render(); setTimeout(nextTurn,600); }
   }
@@ -1146,6 +1452,12 @@ function confirmPurchase(p, family, word, cost){
   p.wordCount[family] = (p.wordCount[family]||0)+1;
   log((p.isHuman?'你':p.name)+' 用單字 "'+word+'" 買下了這塊 '+FAMILIES[family].label+' 家族地產！(花費 '+cost+' 幣)', p.isHuman);
   if(Object.keys(p.owned).length>=8) awardAchievement(p,'tycoon','地產大亨：同時擁有 8 塊地產');
+  if(game.round<=5){
+    p.buysInFirst5 = (p.buysInFirst5||0) + 1;
+    if(p.buysInFirst5>=3) awardAchievement(p,'earlybuyer','五回合內買三塊地：起步搶地盤');
+  }
+  tryLetterFusion(p, family, word);
+  checkMoneyAchievements(p);
   render(); setTimeout(nextTurn,700);
 }
 
@@ -1157,9 +1469,11 @@ function movePlayer(p, steps){
       if(passedGo){
         let goBonus = 2;
         let bankMsg = '';
-        if(ownsAbility(p,'bank')){ goBonus += 1; bankMsg = '（🏦 銀行地產額外 +1）'; }
+        const bankMult = abilityMultiplier(p,'bank');
+        if(bankMult>0){ goBonus += bankMult; bankMsg = '（🏦 銀行地產額外 +'+bankMult+'）'; }
         p.money += goBonus;
         log((p.isHuman?'你':p.name)+' 經過出發點，獲得 '+goBonus+' 枚代幣獎勵！'+bankMsg, p.isHuman);
+        checkMoneyAchievements(p);
       }
       render();
       setTimeout(()=> resolveLanding(p), 350);
@@ -1184,19 +1498,35 @@ function resolveLanding(p){
     const owner = ownerOf(sq.family, slot);
     if(!owner){
       p._pendingSlot = slot;
+      const isBossProp = game.bossPropertySlot === slot;
       if(p.isHuman){
         const f = FAMILIES[sq.family];
-        render(famChip(sq.family)+'<p style="margin:6px 0;font-size:13px;">這是一塊空地。要挑戰拼出新單字來購買嗎？</p>'
-          +'<div class="choice-row">'
-            +'<button class="btn primary small" id="buyYes">挑戰購買</button>'
-            +'<button class="btn small" id="buyNo">跳過</button>'
-          +'</div>');
-        document.getElementById('buyYes').onclick = ()=> beginSpellChallenge('buy', sq.family);
+        if(isBossProp){
+          render(famChip(sq.family)+'<p style="margin:6px 0;font-size:13px;">👑 這是本輪的<b>超級地產</b>！拼對就能直接免費奪得永久五星地產（過路費 +5）！</p>'
+            +'<div class="choice-row">'
+              +'<button class="btn primary small" id="buyYes">挑戰奪取</button>'
+              +'<button class="btn small" id="buyNo">跳過</button>'
+            +'</div>');
+          document.getElementById('buyYes').onclick = ()=> beginSpellChallenge('bossProperty', sq.family);
+        } else {
+          render(famChip(sq.family)+'<p style="margin:6px 0;font-size:13px;">這是一塊空地。要挑戰拼出新單字來購買嗎？</p>'
+            +'<div class="choice-row">'
+              +'<button class="btn primary small" id="buyYes">挑戰購買</button>'
+              +'<button class="btn small" id="buyNo">跳過</button>'
+            +'</div>');
+          document.getElementById('buyYes').onclick = ()=> beginSpellChallenge('buy', sq.family);
+        }
         document.getElementById('buyNo').onclick = ()=> { log('你選擇不購買這塊地。'); render(); setTimeout(nextTurn,400); };
       } else {
-        const wantsBuy = p.money >= 2 && Math.random()<0.85;
-        if(wantsBuy) setTimeout(()=> beginSpellChallenge('buy', sq.family), 600);
-        else { log(p.name+' 選擇不購買這塊地。'); render(); setTimeout(nextTurn,600); }
+        if(isBossProp){
+          setTimeout(()=> beginSpellChallenge('bossProperty', sq.family), 600);
+        } else {
+          const pers = AI_PERSONALITIES[p.personality];
+          const buyChance = pers ? pers.buyChance : 0.85;
+          const wantsBuy = p.money >= 2 && Math.random()<buyChance;
+          if(wantsBuy) setTimeout(()=> beginSpellChallenge('buy', sq.family), 600);
+          else { log(p.name+' 選擇不購買這塊地。'); render(); setTimeout(nextTurn,600); }
+        }
       }
     } else if(owner===p){
       p._pendingSlot = slot;
@@ -1209,7 +1539,9 @@ function resolveLanding(p){
         document.getElementById('upYes').onclick = ()=> beginSpellChallenge('upgrade', sq.family);
         document.getElementById('upNo').onclick = ()=> { log('你選擇不升級這塊地。'); render(); setTimeout(nextTurn,400); };
       } else {
-        if(Math.random()<0.6) setTimeout(()=> beginSpellChallenge('upgrade', sq.family), 600);
+        const pers = AI_PERSONALITIES[p.personality];
+        const upgradeChance = pers ? pers.upgradeChance : 0.6;
+        if(Math.random()<upgradeChance) setTimeout(()=> beginSpellChallenge('upgrade', sq.family), 600);
         else { render(); setTimeout(nextTurn,600); }
       }
     } else {
@@ -1226,7 +1558,9 @@ function resolveLanding(p){
         document.getElementById('payBtn').onclick = ()=> payRent(p, sq.family, rent);
         document.getElementById('challengeBtn').onclick = ()=> beginSpellChallenge('rent', sq.family);
       } else {
-        if(Math.random()<0.4) setTimeout(()=> beginSpellChallenge('rent', sq.family), 600);
+        const pers = AI_PERSONALITIES[p.personality];
+        const rentChallengeChance = pers ? pers.rentChallengeChance : 0.4;
+        if(Math.random()<rentChallengeChance) setTimeout(()=> beginSpellChallenge('rent', sq.family), 600);
         else payRent(p, sq.family, rent);
       }
     }
@@ -1260,27 +1594,31 @@ function resolveLanding(p){
 
 function payRent(p, family, rentOverride){
   const slot = p.pos!==undefined ? p.pos : null;
+  const key = family+':'+p.pos;
+  const owner = ownerOf(family, p.pos);
   let rent = rentOverride;
   if(rent===undefined){
-    const key = family+':'+p.pos;
-    const owner = ownerOf(family, p.pos);
     const li = owner? levelIndex(owner.owned[key]) : 0;
     rent = LEVELS[li].rent;
   }
-  const owner = ownerOf(family, p.pos);
+  const ownerLevel = owner ? Math.max(1, levelIndex(owner.owned[key])) : 1;
   if(BOARD[p.pos] && BOARD[p.pos].ability==='castle'){
-    rent = Math.ceil(rent * 1.5);
+    rent = Math.ceil(rent * (1 + 0.25*ownerLevel));
   }
+  if(game.bossPropertyBonus[key]) rent += game.bossPropertyBonus[key];
   if(p.money >= rent){
     p.money -= rent;
     if(owner){
       owner.money += rent;
+      if(rent>=10) awardAchievement(owner,'bigrent','收到10元以上租金：單筆過路費收入達 10 枚以上');
       if(BOARD[p.pos].ability==='forest'){
-        owner.money += 2;
-        log((p.isHuman?'你':p.name)+' 支付了 '+rent+' 枚代幣的過路費。（🌲 森林地產讓 '+owner.name+' 額外獲得 2 幣）', p.isHuman);
+        const bonus = 2*ownerLevel;
+        owner.money += bonus;
+        log((p.isHuman?'你':p.name)+' 支付了 '+rent+' 枚代幣的過路費。（🌲 森林地產讓 '+owner.name+' 額外獲得 '+bonus+' 幣）', p.isHuman);
       } else {
         log((p.isHuman?'你':p.name)+' 支付了 '+rent+' 枚代幣的過路費。', p.isHuman);
       }
+      checkMoneyAchievements(owner);
     } else {
       log((p.isHuman?'你':p.name)+' 支付了 '+rent+' 枚代幣的過路費。', p.isHuman);
     }
@@ -1316,6 +1654,23 @@ const CHEST_CARDS = [
   {name:'小老師加分', run:(p)=>{ p.money+=1; log('小老師加分，獲得 1 枚代幣。', p.isHuman); }},
   {name:'拼讀失誤', run:(p)=>{ p.pos=6; p.skip=true; log('拼讀失誤，被送回複習關重新練習。', p.isHuman); }},
   {name:'詞彙大挑戰', run:(p)=>{ p.money+=3; log('詞彙大挑戰成功，獲得 3 枚代幣！', p.isHuman); }},
+  {name:'海盜來了！', run:(p)=>{
+    const candidates = [];
+    game.players.forEach(o=>{
+      if(o===p) return;
+      Object.keys(o.owned).forEach(k=>{ if(levelIndex(o.owned[k])<=1) candidates.push({owner:o, key:k}); });
+    });
+    if(!candidates.length){ log('🏴\u200d☠️ 海盜來了，但沒有低等級地產可以偷，平安無事。', p.isHuman); return; }
+    const pick = candidates[Math.floor(Math.random()*candidates.length)];
+    if(Math.random()<0.5){
+      p.owned[pick.key] = pick.owner.owned[pick.key];
+      delete pick.owner.owned[pick.key];
+      log('🏴\u200d☠️ 海盜來了！'+(p.isHuman?'你':p.name)+' 成功從 '+pick.owner.name+' 手中偷走一塊地產！', p.isHuman);
+    } else {
+      p.money = Math.max(0, p.money-2);
+      log('🏴\u200d☠️ 海盜來了！偷竊失敗，'+(p.isHuman?'你':p.name)+' 損失 2 枚代幣。', p.isHuman);
+    }
+  }},
 ];
 
 function drawCard(p, deck, deckName){
@@ -1337,15 +1692,36 @@ function endOfLanding(p){
 function scoreOf(p){
   let val = p.money;
   for(const k in p.owned){
-    val += LEVEL_VALUE[levelIndex(p.owned[k])];
+    const li = levelIndex(p.owned[k]);
+    val += LEVEL_VALUE[li];
     const idx = parseInt(k.split(':')[1],10);
-    if(BOARD[idx] && BOARD[idx].ability==='garden') val += 2;
+    if(BOARD[idx] && BOARD[idx].ability==='garden') val += 2*Math.max(1,li);
   }
   return val;
 }
 
+function starRating(p){
+  const dims = [];
+  dims.push(Math.min(1, (p.collection?p.collection.size:0)/40));
+  dims.push(Math.min(1, (p.familyMastered?p.familyMastered.size:0)/8));
+  dims.push(Math.min(1, Object.keys(p.owned).length/8));
+  dims.push(Math.min(1, (p.achievements?p.achievements.size:0)/ACHIEVEMENT_LABELS.length));
+  dims.push((p.bossWins||0)>0 ? 1 : 0);
+  const avg = dims.reduce((a,b)=>a+b,0)/dims.length;
+  return Math.max(1, Math.round(avg*5));
+}
+function starTitle(stars){
+  if(stars>=5) return '拼字大師';
+  if(stars===4) return '字彙高手';
+  if(stars===3) return '認真學習家';
+  if(stars===2) return '努力新手';
+  return '初心者';
+}
 function endGame(reasonMsg){
   game.gameOver = true;
+  game.players.forEach(p=>{
+    if((p.hintsUsed||0)===0 && (p.turns||0)>=ROUNDS) awardAchievement(p,'noHints','不用提示通關：全場完全不靠提示');
+  });
   const ranked = [...game.players].sort((a,b)=> scoreOf(b)-scoreOf(a));
   const overlay = document.getElementById('overlay');
   overlay.style.display='flex';
@@ -1354,9 +1730,12 @@ function endGame(reasonMsg){
     +(reasonMsg ? '<p style="color:#C0392B;font-size:13px;font-weight:700;margin-bottom:8px;">'+reasonMsg+'</p>' : '')
     +'<p style="color:#7A7261;font-size:13px;margin-bottom:14px;">依代幣＋地產價值計算最終總分</p>'
     + ranked.map((p,i)=>{
-        const achList = p.achievements && p.achievements.size ? '<div style="font-size:10.5px;color:#8A7F63;text-align:left;margin:2px 0 6px 19px;">🏅 '+ACHIEVEMENT_LABELS.filter(a=>p.achievements.has(a.key)).map(a=>a.label).join('、')+'</div>' : '';
+        const achList = p.achievements && p.achievements.size ? '<div style="font-size:10.5px;color:#8A7F63;text-align:left;margin:2px 0 4px 19px;">🏅 '+ACHIEVEMENT_LABELS.filter(a=>p.achievements.has(a.key)).map(a=>a.label).join('、')+'</div>' : '';
+        const stars = starRating(p);
+        const starLine = '<div style="font-size:11px;color:#B8860B;text-align:left;margin:0 0 6px 19px;">'+'⭐'.repeat(stars)+'☆'.repeat(5-stars)+' '+starTitle(stars)+'</div>';
         return '<div>'
           +'<div class="rank"><span><span class="dot" style="background:'+p.color+';display:inline-block;width:11px;height:11px;border-radius:50%;margin-right:6px;"></span>'+(i===0?'🏆 ':'')+p.name+(p.out?'（出局）':'')+'</span><span>'+scoreOf(p)+' 分</span></div>'
+          + starLine
           + achList
         +'</div>';
       }).join('')
@@ -1365,7 +1744,15 @@ function endGame(reasonMsg){
   document.getElementById('playAgain').onclick = ()=>{ overlay.style.display='none'; showSetup(); };
 }
 
+function resetGlobalChallengeState(){
+  bossCallback = null;
+  finalBossCallback = null;
+  if(timerInt) clearInterval(timerInt);
+  timerInt = null;
+}
+
 function startGame(humanCount, aiDifficulty){
+  resetGlobalChallengeState();
   game = freshGame(humanCount, aiDifficulty);
   initBoard();
   renderFamLegend();
@@ -1378,8 +1765,8 @@ function showDifficultyPicker(humanCount){
   const overlay = document.getElementById('overlay');
   overlay.style.display='flex';
   overlay.innerHTML = '<div class="card">'
-    +'<h2>選擇電腦玩家難度</h2>'
-    +'<p style="color:#7A7261;font-size:13px;margin-bottom:14px;">難度會影響電腦玩家拼字成功的機率，小朋友可以自己選擇挑戰程度。</p>'
+    +'<h2>選擇難度</h2>'
+    +'<p style="color:#7A7261;font-size:13px;margin-bottom:14px;">難度會影響電腦玩家拼字成功的機率，也會影響你的提示規則：<br>簡單＝5次提示、次次顯示完整單字；普通＝5次提示（前2次完整單字、後3次只給開頭字母）；困難＝3次提示、都只給開頭字母。</p>'
     +'<div class="choice-row" style="justify-content:center;gap:10px;">'
       +['easy','medium','hard'].map(d=>'<button class="btn primary" data-d="'+d+'" style="min-width:76px;">'+DIFFICULTY_LABELS[d]+'<br><span style="font-weight:400;font-size:11px;">('+Math.round(DIFFICULTY_CHANCES[d]*100)+'%)</span></button>').join('')
     +'</div>'
@@ -1407,8 +1794,7 @@ function showSetup(){
     btn.onclick = ()=>{
       const n = parseInt(btn.dataset.n,10);
       overlay.style.display='none';
-      if(n<3) showDifficultyPicker(n);
-      else startGame(n, 'medium');
+      showDifficultyPicker(n);
     };
   });
 }
@@ -1458,7 +1844,8 @@ document.getElementById('helpBtn').onclick = ()=>{
         + '<li>只要單字裡包含當回合的字母串就算數，不限位置（字首／字中／字尾皆可）。</li>'
         + '<li>系統內建教育部國小 1200 必背單字等兩千多個常見字，離線就能立即判斷；只有極少數不在字庫的生僻字，才會嘗試連線字典查詢確認。</li>'
         + '<li>同一個單字用過之後會進入冷卻，需要間隔 '+WORD_COOLDOWN_ROUNDS+' 個回合後才能再次使用。</li>'
-        + '<li>想不到單字時可以按「需要提示」，提示只會告訴你「開頭字母」，還是要自己想出完整的單字；用了提示這次固定只前進 1 格，且每位玩家一場遊戲最多可使用 '+MAX_HINTS+' 次（擁有 📚 圖書館地產可以 +1 次）。</li>'
+        + '<li>想不到單字時可以按「需要提示」，提示規則依難度而不同：<b>簡單</b>共 5 次、每次都直接顯示完整單字；<b>普通</b>共 5 次，前 2 次顯示完整單字、後 3 次只給開頭字母；<b>困難</b>共 3 次，都只給開頭字母（擁有 📚 圖書館地產可以 +1 次）。用了提示這次固定只前進 1 格，不擲骰子。</li>'
+        + '<li>回合限時也會隨遊戲進度遞減：第 1–5 輪 45 秒、第 6–10 輪 35 秒、第 11–15 輪 25 秒，越後面越刺激！</li>'
       + '</ul>'
 
       + '<h4>🏠 地產：購買、升級、過路費</h4>'
@@ -1470,35 +1857,43 @@ document.getElementById('helpBtn').onclick = ()=>{
       + '</ul>'
 
       + '<h4>🏰 地產特色能力</h4>'
-      + '<p style="margin:0 0 4px;">每塊地產格右上角會有一個小圖示，代表這個位置固定擁有的特色能力（無論當局是哪個字根家族）：</p>'
+      + '<p style="margin:0 0 4px;">每塊地產格右上角會有一個小圖示，代表這個位置固定擁有的特色能力（無論當局是哪個字根家族），能力強度還會隨地產等級（小屋/大屋/飯店）越升越強：</p>'
       + '<ul>'
         + SLOT_ABILITIES.map(a=>'<li>'+a.icon+' <b>'+a.name+'</b>：'+a.desc+'</li>').join('')
       + '</ul>'
 
       + '<h4>🎲 各特殊格效果</h4>'
       + '<ul>'
-        + '<li><b>出發 GO</b>：只要走過或停在出發點，就能獲得 2 枚代幣獎勵（擁有 🏦 銀行地產再 +1）。</li>'
+        + '<li><b>出發 GO</b>：只要走過或停在出發點，就能獲得 2 枚代幣獎勵（擁有 🏦 銀行地產再依等級加碼）。</li>'
         + '<li><b>複習關</b>：純粹休息一下，沒有任何懲罰或獎勵，直接換下一位玩家。</li>'
         + '<li><b>前往複習關</b>：會被直接送到複習關格，並且下一輪暫停一次，不能行動。</li>'
         + '<li><b>單字獎勵站</b>：若已擁有地產，隨機挑一塊免費升級（單字數 +3）；若還沒有地產，改為獲得 3 枚代幣。</li>'
         + '<li><b>拼讀挑戰卡</b>：隨機抽到一種效果——聽音辨字（+1 幣）、造句小挑戰（前進 1 格）、快問快答（+1 幣）、反義詞挑戰（前進 2 格）、複習加分（+2 幣）。</li>'
-        + '<li><b>字彙寶箱卡</b>：隨機抽到一種效果——單字量進步獎（+2 幣）、幸運字卡（隨機一塊地產免費升級，沒有地產則改領 +2 幣）、小老師加分（+1 幣）、拼讀失誤（被送回複習關並暫停一輪）、詞彙大挑戰（+3 幣）。</li>'
-        + '<li><b>👑 Boss Round</b>：每 '+BOSS_ROUND_INTERVAL+' 輪開始前，全體玩家會共同挑戰同一個字根，依成功順序前三名分別獲得 5／3／1 枚代幣！</li>'
+        + '<li><b>字彙寶箱卡</b>：隨機抽到一種效果——單字量進步獎（+2 幣）、幸運字卡（隨機一塊地產免費升級，沒有地產則改領 +2 幣）、小老師加分（+1 幣）、拼讀失誤（被送回複習關並暫停一輪）、詞彙大挑戰（+3 幣）、<b>🏴‍☠️ 海盜來了</b>（隨機挑一塊別人的低等級地產，50% 機率直接偷過來，失敗則損失 2 枚代幣）。</li>'
+        + '<li><b>👑 Boss Round</b>：每 '+BOSS_ROUND_INTERVAL+' 輪開始前，全體玩家會共同挑戰同一個字根，依成功順序前三名分別獲得 5／3／1 枚代幣。同時棋盤上會出現一塊 👑 <b>超級地產</b>，第一個拼對的人可以直接免費奪得永久五星地產（過路費 +5）！</li>'
       + '</ul>'
 
       + '<h4>🔥 進階獎勵機制</h4>'
       + '<ul>'
         + '<li><b>Combo 連續答對</b>：連續拼字成功會累積 Combo，第 2 次額外 +1 步、第 3 次額外 +2 步、第 4 次 +3 枚代幣、第 5 次隨機一塊地產免費升級（之後重新累積）；只要失敗一次 Combo 就會歸零。</li>'
+        + '<li><b>👯 家族連擊</b>：如果連續兩回合都抽到同一個字根家族，第 2 次額外 +2 枚代幣；連續三次同一家族，第 3 次直接隨機升級一塊地產！</li>'
         + '<li><b>⛓️ 字母連鎖</b>：如果這次拼的單字同時包含「上一回合抽到的字母串」和「這次抽到的字母串」（例如上次是 at、這次是 ack，拼出 attack），額外 +2 步。</li>'
+        + '<li><b>🧬 字母融合</b>：如果拼出的單字同時包含「這次的字根」和你已經擁有地產的「另一個字根」，會額外免費升級一塊那個家族的地產，一次動作升兩塊地！</li>'
         + '<li><b>📖 單字收藏冊</b>：每拼對一個新的不同單字都會被記錄下來，集滿 20 個不同單字可獲得寶箱獎勵 +5 枚代幣。</li>'
+        + '<li><b>🌈 字母串家族收藏冊</b>：針對「單一字根家族」持續累積不同單字，集滿該家族的收藏目標即可永久 +1 骰子點數（每個家族只會觸發一次）。</li>'
         + '<li><b>💎 稀有字獎勵</b>：像 elephant、computer、beautiful 這類較長的稀有字，全場第一個拼出的人可額外獲得 5 枚代幣（每個字全場限拿一次）。</li>'
-        + '<li><b>🏅 成就系統</b>：拼字王（收藏滿 30 字）、長字高手（拼出 10 字母以上的單字）、地產大亨（擁有 8 塊地產）、神來一筆（達成 Combo x5）、不放棄（連錯 5 次後成功），達成後會在紀錄欄公告，並顯示在遊戲結束畫面。</li>'
+        + '<li><b>🎲 幸運骰</b>：每位玩家整場遊戲有一次機會，可以不用拼字，直接自選 1–6 的步數前進！在自己回合開始時按下「使用幸運骰」即可。</li>'
+        + '<li><b>🤖 電腦玩家個性</b>：每位電腦玩家開局會隨機拿到一種個性──🤓 學霸（拼字成功率高但少買地）、💰 商人（看到地一定買）、😈 搗蛋鬼（很愛挑戰升級與免租）、🏰 地產王（一定升級自己的地）、🐢 烏龜（前期較弱、後期爆發），玩家名字旁邊會顯示個性標籤。</li>'
+        + '<li><b>📅 每局隨機事件</b>：開局會隨機挑 3 個回合套用天氣／校園事件──🌧 下雨（全體移動 -1 步）、☀️ 晴天（全體移動 +1 步）、📚 校慶（學校地產能力 ×2），每一局出現的回合都不一樣。</li>'
+        + '<li><b>🔥 最終 BOSS</b>：第 15 輪結束後，遊戲不會馬上結束，而是隨機抽出 3 個字根，每位玩家要拼出一個「同時包含至少兩個字根」的單字（例如 at + ing = eating），成功可額外 +20 分！</li>'
+        + '<li><b>🏅 成就系統</b>：拼字王、長字高手、地產大亨、神來一筆、不放棄、連續10次答對、存到50元、拼出100字、一回合走12步、不用提示通關、Boss Killer、家族收藏達人、全家族收藏、五回合內買三塊地、收到10元以上租金，共 '+ACHIEVEMENT_LABELS.length+' 種成就，達成後會在紀錄欄公告，並顯示在遊戲結束畫面。</li>'
       + '</ul>'
 
       + '<h4>🏆 遊戲結束與計分</h4>'
       + '<ul>'
-        + '<li>進行 '+ROUNDS+' 輪後遊戲結束，依「代幣＋地產價值」（🌷 花園地產鑑價 +2）計算總分，分數最高的玩家獲勝！</li>'
+        + '<li>進行 '+ROUNDS+' 輪、並完成最終 BOSS 挑戰後遊戲結束，依「代幣＋地產價值」（🌷 花園地產鑑價依等級加成）計算總分，分數最高的玩家獲勝！</li>'
         + '<li>代幣不足以支付過路費、且名下也沒有地產可變賣時視為<b>破產</b>：會直接扣除當下代幣的 <b>50%</b> 作為懲罰，但<b>不會出局</b>，可以繼續遊戲。</li>'
+        + '<li>結算畫面會依「拼字能力、家族收藏、地產、成就、Boss 表現」五個面向，額外給每位玩家 ⭐1–5 顆星評價與稱號（初心者／努力新手／認真學習家／字彙高手／拼字大師）。</li>'
       + '</ul>';
   } else {
     el.style.display='none';
