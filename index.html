@@ -524,8 +524,8 @@ function hexToRgba(hex, alpha){
   return 'rgba('+r+','+g+','+b+','+alpha+')';
 }
 
-const PLAYER_COLORS = ['#2F80ED','#E03131','#2F9E44'];
-const BOT_NAMES = ['小霸','積木王','拼讀高手'];
+const PLAYER_COLORS = ['#2F80ED','#E03131','#2F9E44','#F2994A','#8E44AD','#B8860B'];
+const BOT_NAMES = ['小霸','積木王','拼讀高手','單字大師','快手','小博士'];
 const ROUNDS = 15;
 const WORD_COOLDOWN_ROUNDS = 5;
 const BOSS_ROUND_INTERVAL = 5;
@@ -682,12 +682,12 @@ function checkFamilyAlbum(p, family, word){
 
 let game = null;
 
-function freshGame(humanCount, aiDifficulty){
+function freshGame(totalPlayers, humanCount, aiDifficulty){
   const players = [];
   let botIdx = 0;
-  for(let i=0;i<3;i++){
+  for(let i=0;i<totalPlayers;i++){
     const isHuman = i < humanCount;
-    const name = isHuman ? (humanCount===1 ? '你' : ('玩家'+(i+1))) : BOT_NAMES[botIdx++];
+    const name = isHuman ? (humanCount===1 ? '你' : ('玩家'+(i+1))) : BOT_NAMES[botIdx++ % BOT_NAMES.length];
     const personality = isHuman ? null : PERSONALITY_KEYS[Math.floor(Math.random()*PERSONALITY_KEYS.length)];
     players.push({
       id:i,name,isHuman,personality,color:PLAYER_COLORS[i],pos:0,money:10,owned:{},wordCount:{},
@@ -837,7 +837,7 @@ function renderBoardState(){
   positionTokens(false);
 }
 
-const PIECE_OFFSETS = [[-14,0],[14,0],[0,13]];
+const PIECE_OFFSETS = [[-16,-7],[16,-7],[-16,11],[16,11],[0,-18],[0,20]];
 const PAWN_SVG =
   '<svg viewBox="0 0 24 32" xmlns="http://www.w3.org/2000/svg">'
     +'<ellipse cx="12" cy="29.5" rx="7.2" ry="2" fill="rgba(0,0,0,.28)"/>'
@@ -1751,9 +1751,9 @@ function resetGlobalChallengeState(){
   timerInt = null;
 }
 
-function startGame(humanCount, aiDifficulty){
+function startGame(totalPlayers, humanCount, aiDifficulty){
   resetGlobalChallengeState();
-  game = freshGame(humanCount, aiDifficulty);
+  game = freshGame(totalPlayers, humanCount, aiDifficulty);
   initBoard();
   renderFamLegend();
   log('遊戲開始！輪流拼出字母串家族的單字前進，買下地產，看誰的字彙分數最高。', true);
@@ -1761,7 +1761,7 @@ function startGame(humanCount, aiDifficulty){
   startTurn();
 }
 
-function showDifficultyPicker(humanCount){
+function showDifficultyPicker(totalPlayers, humanCount){
   const overlay = document.getElementById('overlay');
   overlay.style.display='flex';
   overlay.innerHTML = '<div class="card">'
@@ -1772,7 +1772,28 @@ function showDifficultyPicker(humanCount){
     +'</div>'
     +'</div>';
   overlay.querySelectorAll('[data-d]').forEach(btn=>{
-    btn.onclick = ()=>{ overlay.style.display='none'; startGame(humanCount, btn.dataset.d); };
+    btn.onclick = ()=>{ overlay.style.display='none'; startGame(totalPlayers, humanCount, btn.dataset.d); };
+  });
+}
+
+function showHumanCountPicker(totalPlayers){
+  const overlay = document.getElementById('overlay');
+  overlay.style.display='flex';
+  const options = [];
+  for(let n=1;n<=totalPlayers;n++) options.push(n);
+  overlay.innerHTML = '<div class="card">'
+    +'<h2>選擇人類玩家人數</h2>'
+    +'<p style="color:#7A7261;font-size:13px;margin-bottom:14px;">共 '+totalPlayers+' 位玩家，人數不足時自動由電腦玩家補齊。</p>'
+    +'<div class="choice-row" style="justify-content:center;gap:10px;flex-wrap:wrap;">'
+      + options.map(n=>'<button class="btn primary" data-n="'+n+'" style="min-width:60px;">'+n+' 人</button>').join('')
+    +'</div>'
+    +'</div>';
+  overlay.querySelectorAll('[data-n]').forEach(btn=>{
+    btn.onclick = ()=>{
+      const n = parseInt(btn.dataset.n,10);
+      overlay.style.display='none';
+      showDifficultyPicker(totalPlayers, n);
+    };
   });
 }
 
@@ -1784,17 +1805,17 @@ function showSetup(){
   const overlay = document.getElementById('overlay');
   overlay.style.display='flex';
   overlay.innerHTML = '<div class="card">'
-    +'<h2>選擇人類玩家人數</h2>'
-    +'<p style="color:#7A7261;font-size:13px;margin-bottom:14px;">遊戲共 3 位玩家，人數不足時自動由電腦玩家補齊。</p>'
+    +'<h2>選擇總玩家人數</h2>'
+    +'<p style="color:#7A7261;font-size:13px;margin-bottom:14px;">可以自由設定 3–6 位玩家（人類 + 電腦）一起對戰。</p>'
     +'<div class="choice-row" style="justify-content:center;gap:10px;">'
-      +[1,2,3].map(n=>'<button class="btn primary" data-n="'+n+'" style="min-width:70px;">'+n+' 人</button>').join('')
+      +[3,4,5,6].map(n=>'<button class="btn primary" data-t="'+n+'" style="min-width:60px;">'+n+' 人</button>').join('')
     +'</div>'
     +'</div>';
-  overlay.querySelectorAll('[data-n]').forEach(btn=>{
+  overlay.querySelectorAll('[data-t]').forEach(btn=>{
     btn.onclick = ()=>{
-      const n = parseInt(btn.dataset.n,10);
+      const total = parseInt(btn.dataset.t,10);
       overlay.style.display='none';
-      showDifficultyPicker(n);
+      showHumanCountPicker(total);
     };
   });
 }
@@ -1813,7 +1834,7 @@ document.getElementById('helpBtn').onclick = ()=>{
 
       + '<h4>👥 開始設定</h4>'
       + '<ul>'
-        + '<li>選擇 1–3 位人類玩家，人數不足由電腦補齊，固定 3 人對戰（棋子顏色：<b style="color:#2F80ED">藍</b>／<b style="color:#E03131">紅</b>／<b style="color:#2F9E44">綠</b>）。</li>'
+        + '<li>可自由選擇總玩家人數（3–6 人），再選擇其中有幾位是人類玩家，人數不足由電腦補齊。棋子顏色依序為藍／紅／綠／橘／紫／棕。</li>'
         + '<li>若有電腦玩家，開局前可以選擇難度：簡單（'+Math.round(DIFFICULTY_CHANCES.easy*100)+'% 拼字成功率）／普通（'+Math.round(DIFFICULTY_CHANCES.medium*100)+'%）／困難（'+Math.round(DIFFICULTY_CHANCES.hard*100)+'%）。</li>'
         + '<li>每次開新局，會從 16 組小學常用字根中隨機抽選 8 組上場，所以每一局出現的字母組合都不一樣。</li>'
       + '</ul>'
